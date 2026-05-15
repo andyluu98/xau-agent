@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.python-version
+
+# Env / secrets
+.env
+.env.local
+.env.*.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test / build
+.pytest_cache/
+.ruff_cache/
+build/
+dist/
+*.egg
+htmlcov/
+.coverage
+
+# Logs / runtime
+logs/
+*.log
+state/
+cache/
+
+# uv
+uv.lock
+
+# Reference repos (kept locally, not committed)
+references/
