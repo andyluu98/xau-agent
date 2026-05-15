@@ -79,3 +79,38 @@ def detect(
         macd_hist=_round(macdh, 4),
         reason=f"{side} setup: close vs EMA50={close - ema50:+.2f}, RSI={rsi:.1f}, MACDh={macdh:+.4f}",
     )
+
+
+def build_forced(
+    m15: pd.DataFrame,
+    side: Side,
+    atr_sl_mult: float = 1.5,
+    atr_tp_mult: float = 2.5,
+    atr_period: int = 14,
+) -> Setup:
+    """Build a Setup unconditionally (hunt mode). SL/TP from ATR, entry = last close.
+    Indicators included for display/context only — no gating."""
+    df = add_core_indicators(m15, atr_period=atr_period)
+    last = df.iloc[-1]
+    close = float(last["close"])
+    atr = float(last["ATR"])
+    rsi = float(last["RSI"]) if not pd.isna(last["RSI"]) else 0.0
+    macdh = float(last["MACDh"]) if not pd.isna(last["MACDh"]) else 0.0
+
+    if side == "BUY":
+        sl = close - atr_sl_mult * atr
+        tp = close + atr_tp_mult * atr
+    else:
+        sl = close + atr_sl_mult * atr
+        tp = close - atr_tp_mult * atr
+
+    return Setup(
+        side=side,
+        entry=_round(close),
+        sl=_round(sl),
+        tp=_round(tp),
+        atr=_round(atr, 4),
+        rsi=_round(rsi, 1),
+        macd_hist=_round(macdh, 4),
+        reason=f"FORCED {side} setup (hunt mode): ATR-based SL/TP, RSI={rsi:.1f}, MACDh={macdh:+.4f}",
+    )

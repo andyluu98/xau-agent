@@ -126,6 +126,58 @@ def _cmd_scan_once(args: argparse.Namespace) -> None:
         _scan_once(dry_run_override=(not args.live))
 
 
+def _hunt_once(side_override: str | None, dry_run_override: bool | None = None) -> None:
+    """Hunt mode: force-build setup (bypass strict M15 gate), always run LLM debate.
+    If trend aligned and side_override=None, use trend direction. If trend FLAT, require side_override."""
+    s = get_settings()
+    dry_run = s.dry_run if dry_run_override is None else dry_run_override
+    display.banner(s.symbol, s.entry_tf, s.trend_tf_list, dry_run)
+
+    all_tfs = [s.entry_tf] + s.trend_tf_list
+    data = fetcher.fetch_multi_tf(s.symbol, all_tfs, count=s.bars_lookback)
+    verdict = trend_mod.evaluate({tf: data[tf] for tf in s.trend_tf_list})
+    display.render_trend(verdict.per_tf)
+
+    # Decide side
+    if side_override:
+        side = side_override.upper()
+    elif verdict.aligned:
+        side = "BUY" if verdict.direction == "UP" else "SELL"
+    else:
+        display.render_skip("trend not aligned and no --side override", verdict.reason)
+        return
+    if side not in ("BUY", "SELL"):
+        display.render_skip(f"invalid side: {side}")
+        return
+
+    su = setup_mod.build_forced(
+        data[s.entry_tf], side,  # type: ignore[arg-type]
+        atr_sl_mult=s.atr_sl_mult, atr_tp_mult=s.atr_tp_mult, atr_period=s.atr_period,
+    )
+
+    news = tavily.brief()
+    bull, bear, jv = llm_agents.run_debate(asdict(su), _trend_to_dict(verdict), news)
+    display.render_proposal(su, jv, bull, bear, news, s.default_lot)
+
+    if jv.decision != "GO":
+        display.render_skip(f"judge SKIP (confidence={jv.confidence})")
+        return
+
+    choice = prompt.ask_approval()
+    if choice != "YES":
+        display.render_skip(f"user said {choice}")
+        return
+
+    req = executor.OrderRequest(symbol=s.symbol, side=su.side, lot=s.default_lot, sl=su.sl, tp=su.tp)
+    res = executor.place(req, dry_run=dry_run)
+    display.render_result(res.ok, res.message, res.ticket, res.price)
+
+
+def _cmd_hunt(args: argparse.Namespace) -> None:
+    with connector.session():
+        _hunt_once(side_override=args.side, dry_run_override=(not args.live))
+
+
 def cli() -> None:
     parser = argparse.ArgumentParser(prog="xau-agent", description="Semi-auto AI trader for XAUUSD M15")
     parser.add_argument("--log-level", default=None, help="DEBUG/INFO/WARNING")
@@ -138,6 +190,15 @@ def cli() -> None:
     p_once = sub.add_parser("scan-once", help="single scan-propose-execute cycle then exit")
     p_once.add_argument("--live", action="store_true", help="disable dry-run")
     p_once.set_defaults(func=_cmd_scan_once)
+
+    p_hunt = sub.add_parser(
+        "hunt",
+        help="HUNT mode: bypass strict M15 gate, force full LLM debate. Auto-pick side from H1+H4 trend, or use --side BUY/SELL.",
+    )
+    p_hunt.add_argument("--side", choices=["BUY", "SELL"], default=None,
+                        help="force side; if omitted and trend aligned, uses trend direction")
+    p_hunt.add_argument("--live", action="store_true", help="disable dry-run")
+    p_hunt.set_defaults(func=_cmd_hunt)
 
     args = parser.parse_args()
     s = get_settings()
