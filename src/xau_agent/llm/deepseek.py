@@ -23,8 +23,12 @@ def chat(
     temperature: float = 0.3,
     max_tokens: int = 800,
     model: str | None = None,
+    json_mode: bool = False,
 ) -> str:
-    """Send chat messages, return assistant content string."""
+    """Send chat messages, return assistant content string.
+
+    json_mode=True asks DeepSeek to guarantee valid JSON output (response_format).
+    """
     s = get_settings()
     if not s.deepseek_api_key:
         raise DeepSeekError("DEEPSEEK_API_KEY missing in .env")
@@ -36,6 +40,8 @@ def chat(
         "max_tokens": max_tokens,
         "stream": False,
     }
+    if json_mode:
+        payload["response_format"] = {"type": "json_object"}
     url = f"{s.deepseek_base_url.rstrip('/')}/chat/completions"
     headers = {
         "Authorization": f"Bearer {s.deepseek_api_key}",
