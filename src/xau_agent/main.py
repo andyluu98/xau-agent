@@ -178,6 +178,11 @@ def _cmd_hunt(args: argparse.Namespace) -> None:
         _hunt_once(side_override=args.side, dry_run_override=(not args.live))
 
 
+def _cmd_plan(args: argparse.Namespace) -> None:
+    from xau_agent.cli.plan import show_plan
+    show_plan()
+
+
 def cli() -> None:
     parser = argparse.ArgumentParser(prog="xau-agent", description="Semi-auto AI trader for XAUUSD M15")
     parser.add_argument("--log-level", default=None, help="DEBUG/INFO/WARNING")
@@ -199,6 +204,9 @@ def cli() -> None:
                         help="force side; if omitted and trend aligned, uses trend direction")
     p_hunt.add_argument("--live", action="store_true", help="disable dry-run")
     p_hunt.set_defaults(func=_cmd_hunt)
+
+    p_plan = sub.add_parser("plan", help="in plan san vang (chien luoc M15) ngay tren CLI")
+    p_plan.set_defaults(func=_cmd_plan)
 
     args = parser.parse_args()
     s = get_settings()
