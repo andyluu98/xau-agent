@@ -183,6 +183,20 @@ def _cmd_plan(args: argparse.Namespace) -> None:
     show_plan()
 
 
+def _cmd_zones(args: argparse.Namespace) -> None:
+    """In các vùng mua/bán quan trọng từ MT5 data, không gọi LLM."""
+    from xau_agent.analysis import zones as zones_mod
+    from xau_agent.cli.zones_display import render_zones
+
+    s = get_settings()
+    with connector.session():
+        data = fetcher.fetch_multi_tf(s.symbol, ["M15", "H1", "H4"], count=s.bars_lookback)
+        bid, ask = fetcher.current_price(s.symbol)
+        mid = (bid + ask) / 2
+        zlist = zones_mod.detect(data["M15"], data["H1"], data["H4"], mid, atr_period=s.atr_period)
+        render_zones(s.symbol, mid, zlist, top_n=6)
+
+
 def cli() -> None:
     parser = argparse.ArgumentParser(prog="xau-agent", description="Semi-auto AI trader for XAUUSD M15")
     parser.add_argument("--log-level", default=None, help="DEBUG/INFO/WARNING")
@@ -207,6 +221,9 @@ def cli() -> None:
 
     p_plan = sub.add_parser("plan", help="in plan san vang (chien luoc M15) ngay tren CLI")
     p_plan.set_defaults(func=_cmd_plan)
+
+    p_zones = sub.add_parser("zones", help="quet MT5 va in cac vung MUA/BAN quan trong (S/R, EMA, swing, mocl tron)")
+    p_zones.set_defaults(func=_cmd_zones)
 
     args = parser.parse_args()
     s = get_settings()
