@@ -243,7 +243,8 @@ summary: str    # 1-3 câu lý do tiếng Việt
 | G10 | Spread check (skip nếu spread > 2× normal) | Tránh lệnh giá xấu lúc news | `mt5/executor.py` | **P3** |
 | G11 | Pullback entry detection (chỉ vào lúc giá pullback EMA20/BB mid) | Tránh đu đỉnh/đáy | `analysis/setup.py` | **P3** |
 | G12 | Telegram alert (tùy chọn) | Bạn không ngồi máy vẫn nhận signal | new `notify/telegram.py` | **P3** |
-| G13 | TradingView MCP integrate (chỉ `data_get_study_values`) | Cross-check 26-indicator vote | new `external/tv_mcp.py` | **P3** |
+| G13 | ~~TradingView MCP integrate~~ → **dùng `tradingview-ta` lib trực tiếp (Cách A)** | Cross-check 26-indicator vote | `external/tradingview_ta.py` | ✅ **DONE 2026-05-18** |
+| G13b | TradingView MCP server (v2, optional) | Reuse từ Claude Desktop/Cursor nếu cần | future `external/tv_mcp.py` | **P4 (deferred)** |
 | G14 | Reflection LLM (cuối ngày tổng kết trades) | Học từ thắng/thua | `memory.py` + LLM | **P3** |
 
 ## 9. Phase rollout (cập nhật theo Gap list)
@@ -294,7 +295,9 @@ summary: str    # 1-3 câu lý do tiếng Việt
 | DeepSeek thay vì OpenAI/Claude | 2026-05-15 | Rẻ ($0.001/scan), Vietnamese OK | ✅ |
 | Tavily thay vì scrape | 2026-05-15 | Free tier 1000/tháng đủ, JSON sẵn | ✅ |
 | CLI thay vì Telegram/Web | 2026-05-15 | MVP nhanh, ít phụ thuộc | ✅ (re-evaluate Phase 3) |
-| Hoãn TradingView MCP | 2026-05-16 | Bắt user paid TV + Desktop chạy → ma sát | ✅ (re-evaluate v2) |
+| Hoãn TradingView MCP (tradesdontlie repo) | 2026-05-16 | Bắt user paid TV + Desktop chạy → ma sát | ✅ Vĩnh viễn |
+| Dùng `tradingview-ta` lib trực tiếp (Cách A) thay vì MCP server | 2026-05-18 | Free, không auth, Python native, không cần process MCP riêng. atilaahmettaner/tradingview-mcp wrapper xung quanh chính lib này. | ✅ |
+| MCP server riêng cho TV (G13b) hoãn v2 | 2026-05-18 | Chưa thấy giá trị, ta dùng lib trực tiếp đã đủ. Lúc nào cần expose cho Claude Desktop/Cursor mới làm. | ✅ deferred |
 | Hoãn convert sang Go | 2026-05-15 | M15 không cần, mất LangGraph stack | ✅ |
 | symbol = XAUUSDc (Exness Cent) | 2026-05-15 | Account đang dùng | Cần check khi switch demo |
 
