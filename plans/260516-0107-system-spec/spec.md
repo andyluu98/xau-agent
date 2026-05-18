@@ -298,6 +298,7 @@ summary: str    # 1-3 câu lý do tiếng Việt
 | Hoãn TradingView MCP (tradesdontlie repo) | 2026-05-16 | Bắt user paid TV + Desktop chạy → ma sát | ✅ Vĩnh viễn |
 | Dùng `tradingview-ta` lib trực tiếp (Cách A) thay vì MCP server | 2026-05-18 | Free, không auth, Python native, không cần process MCP riêng. atilaahmettaner/tradingview-mcp wrapper xung quanh chính lib này. | ✅ |
 | MCP server riêng cho TV (G13b) hoãn v2 | 2026-05-18 | Chưa thấy giá trị, ta dùng lib trực tiếp đã đủ. Lúc nào cần expose cho Claude Desktop/Cursor mới làm. | ✅ deferred |
+| Upgrade 3-vai → 6-vai + Execution Trader | 2026-05-18 | Tự phản biện: cắt sai Macro/Tech context, mất 3 góc nhìn rủi ro, không có Trader chi tiết. Thêm lại 4 vai: Macro Analyst + 3 Risk + Execution Trader. Cost 7 calls (~$0.007/phiên) vẫn rẻ. | ✅ |
 | Hoãn convert sang Go | 2026-05-15 | M15 không cần, mất LangGraph stack | ✅ |
 | symbol = XAUUSDc (Exness Cent) | 2026-05-15 | Account đang dùng | Cần check khi switch demo |
 
