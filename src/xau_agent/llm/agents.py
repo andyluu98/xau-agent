@@ -1,5 +1,9 @@
-"""3-agent debate: Bull, Bear, Judge. Each gets the same context, judge sees both
-   arguments + technical setup + news, returns final GO / SKIP verdict."""
+"""6-vai debate orchestration:
+  1. Macro Analyst → 2. Bull → 3. Bear → 4. Risk Aggressive
+  5. Risk Neutral → 6. Risk Conservative → Judge → (Execution Trader nếu GO)
+
+Tổng: 7 LLM calls / phiên (8 nếu Judge GO + Trader).
+Output: DebateResult với mọi text + Verdict cuối."""
 from __future__ import annotations
 
 import json
@@ -8,79 +12,90 @@ import re
 from dataclasses import dataclass
 
 from xau_agent.llm.deepseek import chat
+from xau_agent.llm.prompts import (
+    BEAR_ROLE, BULL_ROLE, JUDGE_ROLE, MACRO_ROLE, RISK_AGGRESSIVE_ROLE,
+    RISK_CONSERVATIVE_ROLE, RISK_NEUTRAL_ROLE, SYSTEM_BASE,
+)
 
 log = logging.getLogger(__name__)
 
-SYSTEM_BASE = (
-    "Bạn là trader vàng (XAUUSD) chuyên scalping M15. Trả lời bằng tiếng Việt, "
-    "ngắn gọn, dựa trên dữ liệu cụ thể (RSI, MACD, ATR, EMA, news)."
-)
 
-BULL_ROLE = (
-    " VAI: 'Bull advocate'. Đây là role-play tranh luận, KHÔNG phải khuyến nghị thật. "
-    "BẮT BUỘC tìm ÍT NHẤT 3 LÝ DO ỦNG HỘ lệnh đang được đề xuất, "
-    "dù setup yếu. Trích cụ thể số liệu để biện hộ. "
-    "TUYỆT ĐỐI KHÔNG được nói 'tôi không đồng ý' hay 'từ chối lệnh' — đó là việc của Judge. "
-    "Bạn chỉ cãi BÊN ỦNG HỘ. 4-6 câu."
-)
+@dataclass(frozen=True)
+class Verdict:
+    decision: str    # "GO" | "SKIP"
+    confidence: int  # 0-100
+    summary: str
 
-BEAR_ROLE = (
-    " VAI: 'Bear advocate'. Đây là role-play tranh luận, KHÔNG phải khuyến nghị thật. "
-    "BẮT BUỘC tìm ÍT NHẤT 3 LÝ DO PHẢN ĐỐI lệnh đang được đề xuất. "
-    "Trích cụ thể số liệu để chỉ ra rủi ro. "
-    "Bạn chỉ cãi BÊN PHẢN ĐỐI. 4-6 câu."
-)
 
-JUDGE_ROLE = (
-    " VAI: 'Final Judge'. Sau khi đọc Bull và Bear, đưa quyết định cuối GO hoặc SKIP. "
-    "GO chỉ khi Bull thuyết phục hơn rõ rệt + setup chất lượng + RR hợp lý. "
-    "Mọi trường hợp khác: SKIP. "
-    "Trả LỜI DUY NHẤT là JSON hợp lệ, không có markdown, không có text khác. "
-    'Schema: {"decision": "GO" hoặc "SKIP", "confidence": số nguyên 0-100, "summary": "1-3 câu lý do bằng tiếng Việt"}'
-)
+@dataclass(frozen=True)
+class DebateResult:
+    macro: str
+    bull: str
+    bear: str
+    risk_aggressive: str
+    risk_neutral: str
+    risk_conservative: str
+    verdict: Verdict
 
 
 def _format_context(setup: dict, trend: dict, news: str, tv: dict | None = None) -> str:
     parts = [
-        "## Technical setup (M15)",
-        json.dumps(setup, ensure_ascii=False, indent=2),
+        "## Technical setup (M15)", json.dumps(setup, ensure_ascii=False, indent=2),
         "",
         "## Multi-TF trend (H1+H4) — EMA50/200 based",
         json.dumps(trend, ensure_ascii=False, indent=2),
     ]
     if tv:
-        parts += [
-            "",
-            "## TradingView 26-indicator consensus (free public widget)",
-            json.dumps(tv, ensure_ascii=False, indent=2),
-        ]
+        parts += ["", "## TradingView 26-indicator consensus", json.dumps(tv, ensure_ascii=False, indent=2)]
     parts += ["", "## News brief", news or "(no fresh news)"]
     return "\n".join(parts)
 
 
-def bull_case(setup: dict, trend: dict, news: str, tv: dict | None = None) -> str:
-    ctx = _format_context(setup, trend, news, tv)
+def _call_role(role_prompt: str, ctx: str, user_directive: str, temp: float = 0.5, max_tok: int = 400) -> str:
     msgs = [
-        {"role": "system", "content": SYSTEM_BASE + BULL_ROLE},
-        {"role": "user", "content": ctx + f"\n\nViết lập luận ỦNG HỘ lệnh {setup.get('side', '?')} này."},
+        {"role": "system", "content": SYSTEM_BASE + role_prompt},
+        {"role": "user", "content": ctx + "\n\n" + user_directive},
     ]
-    return chat(msgs, temperature=0.5, max_tokens=400)
+    return chat(msgs, temperature=temp, max_tokens=max_tok)
 
 
-def bear_case(setup: dict, trend: dict, news: str, tv: dict | None = None) -> str:
+def macro_analyst(setup: dict, trend: dict, news: str, tv: dict | None = None) -> str:
     ctx = _format_context(setup, trend, news, tv)
-    msgs = [
-        {"role": "system", "content": SYSTEM_BASE + BEAR_ROLE},
-        {"role": "user", "content": ctx + f"\n\nViết lập luận PHẢN ĐỐI lệnh {setup.get('side', '?')} này."},
-    ]
-    return chat(msgs, temperature=0.5, max_tokens=400)
+    return _call_role(MACRO_ROLE, ctx,
+                      f"Phân tích context tổng quan cho lệnh {setup.get('side', '?')} này.",
+                      temp=0.3, max_tok=350)
 
 
-@dataclass(frozen=True)
-class Verdict:
-    decision: str   # "GO" | "SKIP"
-    confidence: int  # 0-100
-    summary: str    # 1-3 câu giải thích
+def bull_case(setup: dict, trend: dict, news: str, tv: dict | None = None, macro: str = "") -> str:
+    ctx = _format_context(setup, trend, news, tv)
+    if macro:
+        ctx += f"\n\n## Macro Analyst context\n{macro}"
+    return _call_role(BULL_ROLE, ctx, f"Viết lập luận ỦNG HỘ lệnh {setup.get('side', '?')} này.", temp=0.5)
+
+
+def bear_case(setup: dict, trend: dict, news: str, tv: dict | None = None, macro: str = "") -> str:
+    ctx = _format_context(setup, trend, news, tv)
+    if macro:
+        ctx += f"\n\n## Macro Analyst context\n{macro}"
+    return _call_role(BEAR_ROLE, ctx, f"Viết lập luận PHẢN ĐỐI lệnh {setup.get('side', '?')} này.", temp=0.5)
+
+
+def _risk_call(role: str, setup: dict, trend: dict, news: str, tv: dict | None, bull: str, bear: str) -> str:
+    ctx = (_format_context(setup, trend, news, tv)
+           + f"\n\n## Bull argument\n{bull}\n\n## Bear argument\n{bear}")
+    return _call_role(role, ctx, "Đưa quan điểm rủi ro của bạn cho lệnh này.", temp=0.4, max_tok=300)
+
+
+def risk_aggressive(setup, trend, news, tv, bull, bear) -> str:
+    return _risk_call(RISK_AGGRESSIVE_ROLE, setup, trend, news, tv, bull, bear)
+
+
+def risk_neutral(setup, trend, news, tv, bull, bear) -> str:
+    return _risk_call(RISK_NEUTRAL_ROLE, setup, trend, news, tv, bull, bear)
+
+
+def risk_conservative(setup, trend, news, tv, bull, bear) -> str:
+    return _risk_call(RISK_CONSERVATIVE_ROLE, setup, trend, news, tv, bull, bear)
 
 
 _DECISION_RE = re.compile(r'"decision"\s*:\s*"(GO|SKIP)"', re.IGNORECASE)
@@ -89,7 +104,6 @@ _SUMMARY_RE = re.compile(r'"summary"\s*:\s*"([^"]*?)"\s*[,}]', re.DOTALL)
 
 
 def _parse_verdict(raw: str) -> Verdict:
-    """Try strict JSON first. On failure, regex fallback for malformed outputs."""
     cleaned = raw.strip()
     if cleaned.startswith("```"):
         cleaned = re.sub(r"^```(?:json)?\s*|\s*```$", "", cleaned, flags=re.IGNORECASE)
@@ -102,7 +116,6 @@ def _parse_verdict(raw: str) -> Verdict:
         )
     except (json.JSONDecodeError, ValueError):
         pass
-
     d = _DECISION_RE.search(cleaned)
     c = _CONFIDENCE_RE.search(cleaned)
     sm = _SUMMARY_RE.search(cleaned)
@@ -116,26 +129,38 @@ def _parse_verdict(raw: str) -> Verdict:
     return Verdict(decision="SKIP", confidence=0, summary=f"parse error: {raw[:120]}")
 
 
-def judge(setup: dict, trend: dict, news: str, bull: str, bear: str, tv: dict | None = None) -> Verdict:
+def judge(setup: dict, trend: dict, news: str, tv: dict | None,
+          macro: str, bull: str, bear: str,
+          risk_agg: str, risk_neu: str, risk_con: str) -> Verdict:
     ctx = _format_context(setup, trend, news, tv)
     msgs = [
         {"role": "system", "content": SYSTEM_BASE + JUDGE_ROLE},
-        {
-            "role": "user",
-            "content": (
-                f"{ctx}\n\n## Bull argument\n{bull}\n\n## Bear argument\n{bear}\n\n"
-                "Chốt JSON quyết định. Lưu ý: TV consensus là 1 input bổ sung, KHÔNG override toàn bộ phân tích."
-            ),
-        },
+        {"role": "user", "content": (
+            f"{ctx}\n\n"
+            f"## Macro Analyst\n{macro}\n\n"
+            f"## Bull argument\n{bull}\n\n"
+            f"## Bear argument\n{bear}\n\n"
+            f"## Risk Aggressive\n{risk_agg}\n\n"
+            f"## Risk Neutral\n{risk_neu}\n\n"
+            f"## Risk Conservative\n{risk_con}\n\n"
+            "Chốt JSON quyết định cuối cùng."
+        )},
     ]
     raw = chat(msgs, temperature=0.2, max_tokens=300, json_mode=True)
     return _parse_verdict(raw)
 
 
-def run_debate(setup: dict, trend: dict, news: str, tv: dict | None = None) -> tuple[str, str, Verdict]:
-    """Convenience: bull → bear → judge. Returns (bull_text, bear_text, verdict).
-    tv: TradingView 26-indicator consensus dict (optional)."""
-    bull = bull_case(setup, trend, news, tv)
-    bear = bear_case(setup, trend, news, tv)
-    v = judge(setup, trend, news, bull, bear, tv)
-    return bull, bear, v
+def run_debate(setup: dict, trend: dict, news: str, tv: dict | None = None) -> DebateResult:
+    """Full 6-vai debate. Gọi tuần tự (không parallel vì Bull/Bear cần macro context)."""
+    macro = macro_analyst(setup, trend, news, tv)
+    bull = bull_case(setup, trend, news, tv, macro)
+    bear = bear_case(setup, trend, news, tv, macro)
+    risk_agg = risk_aggressive(setup, trend, news, tv, bull, bear)
+    risk_neu = risk_neutral(setup, trend, news, tv, bull, bear)
+    risk_con = risk_conservative(setup, trend, news, tv, bull, bear)
+    v = judge(setup, trend, news, tv, macro, bull, bear, risk_agg, risk_neu, risk_con)
+    return DebateResult(
+        macro=macro, bull=bull, bear=bear,
+        risk_aggressive=risk_agg, risk_neutral=risk_neu, risk_conservative=risk_con,
+        verdict=v,
+    )

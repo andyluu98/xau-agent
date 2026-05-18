@@ -13,6 +13,7 @@ from xau_agent.cli import display, prompt
 from xau_agent.config import get_settings
 from xau_agent.external import tradingview_ta as tv
 from xau_agent.llm import agents as llm_agents
+from xau_agent.llm import execution as llm_exec
 from xau_agent.mt5 import connector, executor, fetcher
 from xau_agent.news import tavily
 
@@ -72,18 +73,24 @@ def _scan_once(dry_run_override: bool | None = None) -> None:
         display.render_skip("no M15 setup confirms trend", f"trend={verdict.direction}")
         return
 
-    # News + TV consensus + debate
+    # News + TV consensus + 6-vai debate
     news = tavily.brief()
     tv_map = tv.fetch_consensus(s.tv_symbol, s.tv_exchange, s.tv_screener, [s.entry_tf] + s.trend_tf_list)
     display.render_tv_consensus(tv_map)
-    bull, bear, jv = llm_agents.run_debate(
-        asdict(su), _trend_to_dict(verdict), news, tv=tv.to_dict(tv_map),
-    )
-    display.render_proposal(su, jv, bull, bear, news, s.default_lot)
+    result = llm_agents.run_debate(asdict(su), _trend_to_dict(verdict), news, tv=tv.to_dict(tv_map))
+    display.render_proposal(su, result, news, s.default_lot)
 
-    if jv.decision != "GO":
-        display.render_skip(f"judge SKIP (confidence={jv.confidence})")
+    if result.verdict.decision != "GO":
+        display.render_skip(f"judge SKIP (confidence={result.verdict.confidence})")
         return
+
+    # Execution Trader (vai #7): thiết kế entry plan
+    plan = llm_exec.design_execution(
+        asdict(su), _trend_to_dict(verdict), news, tv.to_dict(tv_map),
+        result.macro, result.verdict.summary,
+    )
+    display.render_execution_plan(plan, s.default_lot)
+    final_lot = round(s.default_lot * plan.lot_multiplier, 2) or s.default_lot
 
     # Human gate
     choice = prompt.ask_approval()
@@ -91,9 +98,9 @@ def _scan_once(dry_run_override: bool | None = None) -> None:
         display.render_skip(f"user said {choice}")
         return
 
-    # Execute (or dry-run)
+    # Execute (or dry-run) — dùng lot từ Execution Trader
     req = executor.OrderRequest(
-        symbol=s.symbol, side=su.side, lot=s.default_lot, sl=su.sl, tp=su.tp,
+        symbol=s.symbol, side=su.side, lot=final_lot, sl=su.sl, tp=su.tp,
     )
     res = executor.place(req, dry_run=dry_run)
     display.render_result(res.ok, res.message, res.ticket, res.price)
@@ -163,21 +170,26 @@ def _hunt_once(side_override: str | None, dry_run_override: bool | None = None) 
     news = tavily.brief()
     tv_map = tv.fetch_consensus(s.tv_symbol, s.tv_exchange, s.tv_screener, [s.entry_tf] + s.trend_tf_list)
     display.render_tv_consensus(tv_map)
-    bull, bear, jv = llm_agents.run_debate(
-        asdict(su), _trend_to_dict(verdict), news, tv=tv.to_dict(tv_map),
-    )
-    display.render_proposal(su, jv, bull, bear, news, s.default_lot)
+    result = llm_agents.run_debate(asdict(su), _trend_to_dict(verdict), news, tv=tv.to_dict(tv_map))
+    display.render_proposal(su, result, news, s.default_lot)
 
-    if jv.decision != "GO":
-        display.render_skip(f"judge SKIP (confidence={jv.confidence})")
+    if result.verdict.decision != "GO":
+        display.render_skip(f"judge SKIP (confidence={result.verdict.confidence})")
         return
+
+    plan = llm_exec.design_execution(
+        asdict(su), _trend_to_dict(verdict), news, tv.to_dict(tv_map),
+        result.macro, result.verdict.summary,
+    )
+    display.render_execution_plan(plan, s.default_lot)
+    final_lot = round(s.default_lot * plan.lot_multiplier, 2) or s.default_lot
 
     choice = prompt.ask_approval()
     if choice != "YES":
         display.render_skip(f"user said {choice}")
         return
 
-    req = executor.OrderRequest(symbol=s.symbol, side=su.side, lot=s.default_lot, sl=su.sl, tp=su.tp)
+    req = executor.OrderRequest(symbol=s.symbol, side=su.side, lot=final_lot, sl=su.sl, tp=su.tp)
     res = executor.place(req, dry_run=dry_run)
     display.render_result(res.ok, res.message, res.ticket, res.price)
 

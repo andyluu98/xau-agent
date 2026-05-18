@@ -64,7 +64,8 @@ def render_tv_consensus(tv_map: dict) -> None:
     console.print(t)
 
 
-def render_proposal(setup, verdict, bull: str, bear: str, news: str, lot: float) -> None:
+def render_proposal(setup, result, news: str, lot: float) -> None:
+    """Render full 6-vai debate result. `result` là DebateResult."""
     color = "green" if setup.side == "BUY" else "red"
     head = (
         f"[bold {color}]{setup.side}[/bold {color}]  "
@@ -73,20 +74,38 @@ def render_proposal(setup, verdict, bull: str, bear: str, news: str, lot: float)
     )
     console.print(Panel(head, title="[bold]Setup[/bold]", border_style=color))
 
-    console.print(Panel(bull.strip(), title="[green]Bull[/green]", border_style="green"))
-    console.print(Panel(bear.strip(), title="[red]Bear[/red]", border_style="red"))
+    console.print(Panel(result.macro.strip(), title="[cyan]1. Macro / Tech Analyst[/cyan]", border_style="cyan"))
+    console.print(Panel(result.bull.strip(), title="[green]2. Bull[/green]", border_style="green"))
+    console.print(Panel(result.bear.strip(), title="[red]3. Bear[/red]", border_style="red"))
+    console.print(Panel(result.risk_aggressive.strip(),
+                        title="[orange3]4. Risk Aggressive[/orange3]", border_style="orange3"))
+    console.print(Panel(result.risk_neutral.strip(),
+                        title="[yellow]5. Risk Neutral[/yellow]", border_style="yellow"))
+    console.print(Panel(result.risk_conservative.strip(),
+                        title="[blue]6. Risk Conservative[/blue]", border_style="blue"))
 
     if news:
-        console.print(Panel(news.strip(), title="News brief", border_style="cyan"))
+        console.print(Panel(news.strip(), title="News brief", border_style="dim"))
 
-    vcolor = "green" if verdict.decision == "GO" else "yellow"
-    console.print(
-        Panel(
-            f"[bold {vcolor}]{verdict.decision}[/bold {vcolor}]  confidence={verdict.confidence}  {verdict.summary}",
-            title="[bold]Judge[/bold]",
-            border_style=vcolor,
-        )
+    v = result.verdict
+    vcolor = "green" if v.decision == "GO" else "yellow"
+    console.print(Panel(
+        f"[bold {vcolor}]{v.decision}[/bold {vcolor}]  confidence={v.confidence}  {v.summary}",
+        title="[bold]Judge (final)[/bold]", border_style=vcolor,
+    ))
+
+
+def render_execution_plan(plan, default_lot: float) -> None:
+    """Render Execution Trader output (vai #7, chỉ chạy khi Judge GO)."""
+    final_lot = round(default_lot * plan.lot_multiplier, 2)
+    body = (
+        f"[bold]Entry strategy:[/bold] {plan.entry_strategy}\n"
+        f"[bold]Entry price hint:[/bold] {plan.entry_price_hint:.2f}\n"
+        f"[bold]Lot multiplier:[/bold] {plan.lot_multiplier}×  → final lot = {final_lot}\n"
+        f"[bold]Hold rule:[/bold] {plan.hold_rule}\n"
+        f"[bold]Notes:[/bold] {plan.notes}"
     )
+    console.print(Panel(body, title="[bold magenta]7. Execution Trader[/bold magenta]", border_style="magenta"))
 
 
 def render_result(ok: bool, message: str, ticket=None, price=None) -> None:
