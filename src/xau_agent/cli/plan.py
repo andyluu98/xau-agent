@@ -20,9 +20,12 @@ def show_plan() -> None:
     t.add_column("Lệnh", style="yellow")
     t.add_column("Bot làm gì")
     t.add_column("Khi nào dùng", style="dim")
-    t.add_row("hunt", "Săn 1 lần ngay (gọi AI, hỏi y/n)", "Muốn biết 'bây giờ có nên trade?'")
+    t.add_row("hunt", "Săn 1 lần ngay (gọi AI + TV consensus, hỏi y/n)", "Muốn biết 'bây giờ có nên trade?'")
     t.add_row("scan-once", "Quét 1 lần (chỉ vào lệnh khi setup đẹp)", "Tiết kiệm quota AI")
     t.add_row("run", "Loop liên tục mỗi 15 phút", "Để bot canh đêm/giờ làm việc")
+    t.add_row("tv", "In TV 26-indicator consensus (free, no MT5)", "Xem 26 indicator vote nhanh")
+    t.add_row("zones", "In vùng MUA/BÁN (S/R, EMA, swing, round)", "Tìm vùng entry/exit")
+    t.add_row("plan", "In chiến lược này", "Đọc lại cách bot hoạt động")
     console.print(t)
 
     # === 6 bước trong hunt ===

@@ -11,6 +11,7 @@ from xau_agent.analysis import setup as setup_mod
 from xau_agent.analysis import trend as trend_mod
 from xau_agent.cli import display, prompt
 from xau_agent.config import get_settings
+from xau_agent.external import tradingview_ta as tv
 from xau_agent.llm import agents as llm_agents
 from xau_agent.mt5 import connector, executor, fetcher
 from xau_agent.news import tavily
@@ -71,9 +72,13 @@ def _scan_once(dry_run_override: bool | None = None) -> None:
         display.render_skip("no M15 setup confirms trend", f"trend={verdict.direction}")
         return
 
-    # News + debate
+    # News + TV consensus + debate
     news = tavily.brief()
-    bull, bear, jv = llm_agents.run_debate(asdict(su), _trend_to_dict(verdict), news)
+    tv_map = tv.fetch_consensus(s.tv_symbol, s.tv_exchange, s.tv_screener, [s.entry_tf] + s.trend_tf_list)
+    display.render_tv_consensus(tv_map)
+    bull, bear, jv = llm_agents.run_debate(
+        asdict(su), _trend_to_dict(verdict), news, tv=tv.to_dict(tv_map),
+    )
     display.render_proposal(su, jv, bull, bear, news, s.default_lot)
 
     if jv.decision != "GO":
@@ -156,7 +161,11 @@ def _hunt_once(side_override: str | None, dry_run_override: bool | None = None) 
     )
 
     news = tavily.brief()
-    bull, bear, jv = llm_agents.run_debate(asdict(su), _trend_to_dict(verdict), news)
+    tv_map = tv.fetch_consensus(s.tv_symbol, s.tv_exchange, s.tv_screener, [s.entry_tf] + s.trend_tf_list)
+    display.render_tv_consensus(tv_map)
+    bull, bear, jv = llm_agents.run_debate(
+        asdict(su), _trend_to_dict(verdict), news, tv=tv.to_dict(tv_map),
+    )
     display.render_proposal(su, jv, bull, bear, news, s.default_lot)
 
     if jv.decision != "GO":
@@ -181,6 +190,15 @@ def _cmd_hunt(args: argparse.Namespace) -> None:
 def _cmd_plan(args: argparse.Namespace) -> None:
     from xau_agent.cli.plan import show_plan
     show_plan()
+
+
+def _cmd_tv(args: argparse.Namespace) -> None:
+    """In TradingView 26-indicator consensus cho M15/H1/H4 (không gọi LLM, không MT5)."""
+    s = get_settings()
+    tfs = [s.entry_tf] + s.trend_tf_list
+    log.info("Fetching TV consensus for %s on %s (%s) tfs=%s", s.tv_symbol, s.tv_exchange, s.tv_screener, tfs)
+    tv_map = tv.fetch_consensus(s.tv_symbol, s.tv_exchange, s.tv_screener, tfs, force_refresh=args.refresh)
+    display.render_tv_consensus(tv_map)
 
 
 def _cmd_zones(args: argparse.Namespace) -> None:
@@ -224,6 +242,10 @@ def cli() -> None:
 
     p_zones = sub.add_parser("zones", help="quet MT5 va in cac vung MUA/BAN quan trong (S/R, EMA, swing, mocl tron)")
     p_zones.set_defaults(func=_cmd_zones)
+
+    p_tv = sub.add_parser("tv", help="in TradingView 26-indicator consensus (free, no auth)")
+    p_tv.add_argument("--refresh", action="store_true", help="bypass cache 5min")
+    p_tv.set_defaults(func=_cmd_tv)
 
     args = parser.parse_args()
     s = get_settings()

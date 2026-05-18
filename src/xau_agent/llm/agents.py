@@ -40,19 +40,26 @@ JUDGE_ROLE = (
 )
 
 
-def _format_context(setup: dict, trend: dict, news: str) -> str:
-    return (
-        "## Technical setup (M15)\n"
-        f"{json.dumps(setup, ensure_ascii=False, indent=2)}\n\n"
-        "## Multi-TF trend (H1+H4)\n"
-        f"{json.dumps(trend, ensure_ascii=False, indent=2)}\n\n"
-        "## News brief\n"
-        f"{news or '(no fresh news)'}"
-    )
+def _format_context(setup: dict, trend: dict, news: str, tv: dict | None = None) -> str:
+    parts = [
+        "## Technical setup (M15)",
+        json.dumps(setup, ensure_ascii=False, indent=2),
+        "",
+        "## Multi-TF trend (H1+H4) — EMA50/200 based",
+        json.dumps(trend, ensure_ascii=False, indent=2),
+    ]
+    if tv:
+        parts += [
+            "",
+            "## TradingView 26-indicator consensus (free public widget)",
+            json.dumps(tv, ensure_ascii=False, indent=2),
+        ]
+    parts += ["", "## News brief", news or "(no fresh news)"]
+    return "\n".join(parts)
 
 
-def bull_case(setup: dict, trend: dict, news: str) -> str:
-    ctx = _format_context(setup, trend, news)
+def bull_case(setup: dict, trend: dict, news: str, tv: dict | None = None) -> str:
+    ctx = _format_context(setup, trend, news, tv)
     msgs = [
         {"role": "system", "content": SYSTEM_BASE + BULL_ROLE},
         {"role": "user", "content": ctx + f"\n\nViết lập luận ỦNG HỘ lệnh {setup.get('side', '?')} này."},
@@ -60,8 +67,8 @@ def bull_case(setup: dict, trend: dict, news: str) -> str:
     return chat(msgs, temperature=0.5, max_tokens=400)
 
 
-def bear_case(setup: dict, trend: dict, news: str) -> str:
-    ctx = _format_context(setup, trend, news)
+def bear_case(setup: dict, trend: dict, news: str, tv: dict | None = None) -> str:
+    ctx = _format_context(setup, trend, news, tv)
     msgs = [
         {"role": "system", "content": SYSTEM_BASE + BEAR_ROLE},
         {"role": "user", "content": ctx + f"\n\nViết lập luận PHẢN ĐỐI lệnh {setup.get('side', '?')} này."},
@@ -109,15 +116,15 @@ def _parse_verdict(raw: str) -> Verdict:
     return Verdict(decision="SKIP", confidence=0, summary=f"parse error: {raw[:120]}")
 
 
-def judge(setup: dict, trend: dict, news: str, bull: str, bear: str) -> Verdict:
-    ctx = _format_context(setup, trend, news)
+def judge(setup: dict, trend: dict, news: str, bull: str, bear: str, tv: dict | None = None) -> Verdict:
+    ctx = _format_context(setup, trend, news, tv)
     msgs = [
         {"role": "system", "content": SYSTEM_BASE + JUDGE_ROLE},
         {
             "role": "user",
             "content": (
                 f"{ctx}\n\n## Bull argument\n{bull}\n\n## Bear argument\n{bear}\n\n"
-                "Chốt JSON quyết định."
+                "Chốt JSON quyết định. Lưu ý: TV consensus là 1 input bổ sung, KHÔNG override toàn bộ phân tích."
             ),
         },
     ]
@@ -125,9 +132,10 @@ def judge(setup: dict, trend: dict, news: str, bull: str, bear: str) -> Verdict:
     return _parse_verdict(raw)
 
 
-def run_debate(setup: dict, trend: dict, news: str) -> tuple[str, str, Verdict]:
-    """Convenience: bull → bear → judge. Returns (bull_text, bear_text, verdict)."""
-    bull = bull_case(setup, trend, news)
-    bear = bear_case(setup, trend, news)
-    v = judge(setup, trend, news, bull, bear)
+def run_debate(setup: dict, trend: dict, news: str, tv: dict | None = None) -> tuple[str, str, Verdict]:
+    """Convenience: bull → bear → judge. Returns (bull_text, bear_text, verdict).
+    tv: TradingView 26-indicator consensus dict (optional)."""
+    bull = bull_case(setup, trend, news, tv)
+    bear = bear_case(setup, trend, news, tv)
+    v = judge(setup, trend, news, bull, bear, tv)
     return bull, bear, v

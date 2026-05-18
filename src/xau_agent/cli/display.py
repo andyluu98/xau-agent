@@ -36,6 +36,34 @@ def render_trend(per_tf: list) -> None:
     console.print(t)
 
 
+def render_tv_consensus(tv_map: dict) -> None:
+    """Render bảng consensus 26-indicator từ TradingView (free public widget).
+    tv_map: {"M15": TVConsensus, "H1": TVConsensus, "H4": TVConsensus}."""
+    if not tv_map:
+        return
+    t = Table(title="TradingView 26-indicator consensus", show_header=True, header_style="bold magenta")
+    t.add_column("TF"); t.add_column("Recommendation"); t.add_column("Buy", justify="right")
+    t.add_column("Sell", justify="right"); t.add_column("Neutral", justify="right")
+    t.add_column("Oscillators", style="dim"); t.add_column("Moving Avg", style="dim")
+    for tf, c in tv_map.items():
+        if "STRONG_BUY" in c.recommendation:
+            col = "bright_green"
+        elif "BUY" in c.recommendation:
+            col = "green"
+        elif "STRONG_SELL" in c.recommendation:
+            col = "bright_red"
+        elif "SELL" in c.recommendation:
+            col = "red"
+        else:
+            col = "yellow"
+        t.add_row(
+            tf, f"[{col}]{c.recommendation}[/{col}]",
+            str(c.buy), str(c.sell), str(c.neutral),
+            c.oscillators_reco, c.moving_averages_reco,
+        )
+    console.print(t)
+
+
 def render_proposal(setup, verdict, bull: str, bear: str, news: str, lot: float) -> None:
     color = "green" if setup.side == "BUY" else "red"
     head = (

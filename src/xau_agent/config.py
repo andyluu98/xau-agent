@@ -32,6 +32,11 @@ class Settings(BaseSettings):
     # News
     tavily_api_key: str = ""
 
+    # TradingView (free, no auth) — for 26-indicator consensus vote
+    tv_symbol: str = "XAUUSD"        # ký hiệu trên TradingView (khác MT5)
+    tv_exchange: str = "OANDA"       # sàn TV: OANDA / FX_IDC / FOREXCOM
+    tv_screener: str = "cfd"         # screener: cfd / forex / crypto
+
     # Trading
     symbol: str = "XAUUSD"
     entry_tf: Literal["M1", "M5", "M15", "M30", "H1"] = "M15"
