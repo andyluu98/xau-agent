@@ -49,6 +49,10 @@ class Settings(BaseSettings):
     atr_period: int = 14
     bars_lookback: int = 200  # how many bars to fetch per TF
 
+    # Risk management (G2 + G3)
+    risk_pct_per_trade: float = 0.0   # 0 = dùng default_lot. >0 = tính lot từ % balance
+    kill_dd_pct: float = 3.0          # daily DD ≥ x% → tự tắt bot đến hôm sau
+
     # Runtime
     dry_run: bool = True
     log_level: str = "INFO"

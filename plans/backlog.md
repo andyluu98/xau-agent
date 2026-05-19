@@ -42,34 +42,29 @@ Danh sách tính năng đã thiết kế trong spec nhưng **chưa code**. Đán
 - Update `exit_time`, `exit_price`, `pnl_usc`, `hold_minutes` khi lệnh đóng
 - Hiện các cột này = giá trị default (0/empty) khi log entry
 
-### G2. Daily DD Kill Switch
+### G2. Daily DD Kill Switch — ✅ DONE 2026-05-19
 
-**Vấn đề:** Bot không có cơ chế tự dừng khi lỗ. Trader cay → trade tiếp → lỗ thêm.
+**Đã làm:**
+- `src/xau_agent/risk_manager.py` (~115 LOC) — compute_daily_pnl + is_killed + arm_kill + check_risk
+- Đọc MT5 `history_deals_get` từ 00:00 UTC hôm nay → tính tổng P&L
+- Nếu P&L ≤ -KILL_DD_PCT% balance → tạo `state/kill_switch.flag` với timestamp + reason
+- Auto-reset khi sang ngày mới UTC (compare flag timestamp)
+- Hook đầu `_scan_once` và `_hunt_once` qua `_kill_gate()` — render SKIP panel nếu bị block
+- CLI `xau-agent reset-kill` reset thủ công
+- 3 unit test (lifecycle, auto-reset, today-active)
+- Mặc định `KILL_DD_PCT=3.0` (config qua .env)
+- KHÔNG cần G1 journal (đọc trực tiếp MT5 history)
 
-**Spec:**
-- Tạo `src/xau_agent/risk_manager.py`
-- Đọc P&L từ MT5 trong 24h gần nhất (qua `history_deals_get`)
-- Nếu P&L day ≤ -3% balance → set flag `KILLED` trong `state/kill_switch.flag`
-- Mọi lệnh `hunt` / `scan-once` / `run` đầu tiên kiểm flag → SKIP nếu killed
-- Flag tự reset lúc 00:00 server time hôm sau
-- Thêm CLI `xau-agent reset-kill` để reset thủ công
+### G3. Risk-based Lot Sizing — ✅ DONE 2026-05-19
 
-**Effort:** ~80 LOC, 1 commit
-**Phụ thuộc:** G1 (cần journal để biết P&L)
-
-### G3. Risk-based Lot Sizing
-
-**Vấn đề:** Default fixed `0.01` lot. Khi ATR rộng lỗ có thể $5; ATR hẹp $1. Không cân.
-
-**Spec:**
-- Trong `mt5/executor.py`: hàm `calc_lot_by_risk(balance, sl_distance_pip, risk_pct=1.0)` 
-- Logic: `lot = (balance × risk_pct%) / (sl_pip × pip_value × 100)` cho cent account
-- Round xuống bội số 0.01
-- Override `DEFAULT_LOT` trong `.env` bằng `RISK_PCT_PER_TRADE=1.0`
-- Combine với `lot_multiplier` từ Execution Trader (0.5x / 1x / 1.5x)
-
-**Effort:** ~50 LOC, 1 commit
-**Phụ thuộc:** không
+**Đã làm:**
+- `mt5/executor.calc_lot_by_risk(symbol, balance, sl_distance_price, risk_pct)`
+- Dùng `symbol_info.trade_tick_size + trade_tick_value` → tính loss per lot chính xác
+- Round xuống bội số `volume_step`, clamp `volume_min`/`volume_max`
+- Combine với `lot_multiplier` từ Execution Trader (vai #7)
+- Activate qua `RISK_PCT_PER_TRADE > 0` trong .env (default 0 = giữ DEFAULT_LOT)
+- Helper `_resolve_lot()` trong main.py tính final_lot
+- Live verified trên Exness Cent: balance 11485 USC, 1% risk, SL=2.0 price → lot 0.57 (= 1% loss đúng)
 
 ---
 

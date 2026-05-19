@@ -27,6 +27,7 @@ def show_plan() -> None:
     t.add_row("zones", "In vùng MUA/BÁN (S/R, EMA, swing, round)", "Tìm vùng entry/exit")
     t.add_row("plan", "In chiến lược này", "Đọc lại cách bot hoạt động")
     t.add_row("journal", "In sổ tay CSV — lệnh gần nhất + Judge/User decision", "Review bot performance")
+    t.add_row("reset-kill", "Reset thủ công flag daily DD kill switch (G2)", "Sau khi tự cân nhắc, tiếp tục trade")
     console.print(t)
 
     # === 6 bước trong hunt ===

@@ -19,6 +19,7 @@ from xau_agent.llm import agents as llm_agents
 from xau_agent.llm import execution as llm_exec
 from xau_agent.mt5 import connector, executor, fetcher
 from xau_agent.news import tavily
+from xau_agent.risk_manager import check_risk, reset_kill
 
 log = logging.getLogger("xau_agent")
 
@@ -29,6 +30,43 @@ def _setup_logging(level: str) -> None:
         format="%(asctime)s %(levelname)s %(name)s | %(message)s",
         datefmt="%H:%M:%S",
     )
+
+
+def _resolve_lot(symbol: str, sl_price_distance: float, lot_multiplier: float = 1.0) -> float:
+    """Tính lot cuối:
+    - Nếu risk_pct_per_trade > 0 → dùng risk-based (G3)
+    - Else → default_lot
+    - Nhân lot_multiplier từ Execution Trader (vai #7)
+    - Clamp về default_lot nếu tính lỗi"""
+    s = get_settings()
+    base = s.default_lot
+    if s.risk_pct_per_trade > 0 and sl_price_distance > 0:
+        info = mt5_account_balance()
+        if info is not None:
+            calc = executor.calc_lot_by_risk(symbol, info, sl_price_distance, s.risk_pct_per_trade)
+            if calc and calc > 0:
+                base = calc
+    return round(base * (lot_multiplier or 1.0), 2) or s.default_lot
+
+
+def mt5_account_balance() -> float | None:
+    """Lấy balance hiện tại (tách hàm để dễ mock trong test)."""
+    import MetaTrader5 as mt5
+    info = mt5.account_info()
+    return float(info.balance) if info else None
+
+
+def _kill_gate(symbol: str) -> bool:
+    """Check kill switch trước khi chạy phiên. Returns True nếu bị block."""
+    snap = check_risk(symbol)
+    if snap.killed:
+        display.render_skip(
+            f"KILL SWITCH active — daily DD {snap.daily_pnl_pct:.2f}%",
+            f"PnL hôm nay: {snap.daily_pnl_usc:+.2f} USC · {snap.kill_reason}\n"
+            f"Tự reset 00:00 UTC. Reset thủ công: xau-agent reset-kill",
+        )
+        return True
+    return False
 
 
 def _build_record(
@@ -83,6 +121,10 @@ def _scan_once(dry_run_override: bool | None = None) -> None:
     dry_run = s.dry_run if dry_run_override is None else dry_run_override
     display.banner(s.symbol, s.entry_tf, s.trend_tf_list, dry_run)
 
+    # Kill switch (G2) — first gate, before anything else
+    if _kill_gate(s.symbol):
+        return
+
     # Daily trade cap
     open_n = executor.count_open_positions(s.symbol)
     if open_n >= s.max_open_trades:
@@ -129,7 +171,8 @@ def _scan_once(dry_run_override: bool | None = None) -> None:
         result.macro, result.verdict.summary,
     )
     display.render_execution_plan(plan, s.default_lot)
-    final_lot = round(s.default_lot * plan.lot_multiplier, 2) or s.default_lot
+    sl_dist = abs(su.entry - su.sl)
+    final_lot = _resolve_lot(s.symbol, sl_dist, plan.lot_multiplier)
 
     # Human gate
     choice = prompt.ask_approval()
@@ -189,6 +232,9 @@ def _hunt_once(side_override: str | None, dry_run_override: bool | None = None) 
     dry_run = s.dry_run if dry_run_override is None else dry_run_override
     display.banner(s.symbol, s.entry_tf, s.trend_tf_list, dry_run)
 
+    if _kill_gate(s.symbol):
+        return
+
     all_tfs = [s.entry_tf] + s.trend_tf_list
     data = fetcher.fetch_multi_tf(s.symbol, all_tfs, count=s.bars_lookback)
     verdict = trend_mod.evaluate({tf: data[tf] for tf in s.trend_tf_list})
@@ -228,7 +274,8 @@ def _hunt_once(side_override: str | None, dry_run_override: bool | None = None) 
         result.macro, result.verdict.summary,
     )
     display.render_execution_plan(plan, s.default_lot)
-    final_lot = round(s.default_lot * plan.lot_multiplier, 2) or s.default_lot
+    sl_dist = abs(su.entry - su.sl)
+    final_lot = _resolve_lot(s.symbol, sl_dist, plan.lot_multiplier)
 
     choice = prompt.ask_approval()
     if choice != "YES":
@@ -258,6 +305,14 @@ def _cmd_plan(args: argparse.Namespace) -> None:
 def _cmd_journal(args: argparse.Namespace) -> None:
     from xau_agent.cli.journal_display import render_recent
     render_recent(limit=args.limit)
+
+
+def _cmd_reset_kill(args: argparse.Namespace) -> None:
+    removed = reset_kill()
+    if removed:
+        display.render_skip("Kill switch ĐÃ RESET — bot có thể trade lại")
+    else:
+        display.render_skip("Kill switch chưa active, không có gì để reset")
 
 
 def _cmd_tv(args: argparse.Namespace) -> None:
@@ -318,6 +373,9 @@ def cli() -> None:
     p_journal = sub.add_parser("journal", help="in N lenh gan nhat tu so tay CSV (state/trades.csv)")
     p_journal.add_argument("--limit", type=int, default=10, help="so dong de in (default 10)")
     p_journal.set_defaults(func=_cmd_journal)
+
+    p_reset = sub.add_parser("reset-kill", help="xoa flag kill switch (G2) thu cong")
+    p_reset.set_defaults(func=_cmd_reset_kill)
 
     args = parser.parse_args()
     s = get_settings()

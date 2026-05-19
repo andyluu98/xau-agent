@@ -82,3 +82,44 @@ def place(req: OrderRequest, dry_run: bool = True) -> OrderResult:
 def count_open_positions(symbol: str) -> int:
     positions = mt5.positions_get(symbol=symbol)
     return 0 if positions is None else len(positions)
+
+
+def calc_lot_by_risk(
+    symbol: str, balance: float, sl_distance_price: float, risk_pct: float,
+) -> float | None:
+    """Tính lot sao cho khi chạm SL chỉ lỗ `risk_pct`% balance.
+
+    sl_distance_price: khoảng cách entry → SL tính theo PRICE (vd 2.0 cho XAUUSD)
+    risk_pct: % balance chấp nhận lỗ (vd 1.0 = 1%)
+
+    Returns lot (đã round xuống bội số volume_step, clamp min/max). None nếu không tính được.
+    """
+    if risk_pct <= 0 or sl_distance_price <= 0:
+        return None
+    info = mt5.symbol_info(symbol)
+    if info is None:
+        log.warning("calc_lot_by_risk: symbol_info(%s) None", symbol)
+        return None
+
+    tick_size = float(info.trade_tick_size or 0.001)
+    tick_value = float(info.trade_tick_value or 0.0)
+    if tick_size <= 0 or tick_value <= 0:
+        log.warning("calc_lot_by_risk: bad tick_size=%s tick_value=%s", tick_size, tick_value)
+        return None
+
+    # Loss per 1 lot khi chạm SL
+    loss_per_lot = (sl_distance_price / tick_size) * tick_value
+    if loss_per_lot <= 0:
+        return None
+
+    target_loss = balance * risk_pct / 100.0
+    raw_lot = target_loss / loss_per_lot
+
+    step = float(info.volume_step or 0.01)
+    vmin = float(info.volume_min or step)
+    vmax = float(info.volume_max or 100.0)
+
+    # Round xuống bội số step để không vượt risk
+    lot = (int(raw_lot / step)) * step
+    lot = max(vmin, min(vmax, lot))
+    return round(lot, 2)
