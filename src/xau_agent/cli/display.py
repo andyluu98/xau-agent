@@ -70,19 +70,21 @@ def render_proposal(setup, result, news: str, lot: float) -> None:
     head = (
         f"[bold {color}]{setup.side}[/bold {color}]  "
         f"Entry={setup.entry:.2f}  SL={setup.sl:.2f}  TP={setup.tp:.2f}  "
-        f"Lot={lot}  ATR={setup.atr:.2f}  RSI={setup.rsi:.1f}  MACDh={setup.macd_hist:+.4f}"
+        f"Lot={lot}  ATR={setup.atr:.2f}  RSI={setup.rsi:.1f}  MACDh={setup.macd_hist:+.4f}\n"
+        f"[dim italic]Đây là giả định: NẾU vào lệnh thì sẽ vào kiểu này. "
+        f"Quyết định cuối ở Judge bên dưới.[/dim italic]"
     )
-    console.print(Panel(head, title="[bold]Setup[/bold]", border_style=color))
+    console.print(Panel(head, title="[bold]Setup giả định (chưa quyết)[/bold]", border_style=color))
 
     console.print(Panel(result.macro.strip(), title="[cyan]1. Macro / Tech Analyst[/cyan]", border_style="cyan"))
-    console.print(Panel(result.bull.strip(), title="[green]2. Bull[/green]", border_style="green"))
-    console.print(Panel(result.bear.strip(), title="[red]3. Bear[/red]", border_style="red"))
+    console.print(Panel(result.bull.strip(), title="[green]2. Bull (cãi ỦNG HỘ)[/green]", border_style="green"))
+    console.print(Panel(result.bear.strip(), title="[red]3. Bear (cãi PHẢN ĐỐI)[/red]", border_style="red"))
     console.print(Panel(result.risk_aggressive.strip(),
-                        title="[orange3]4. Risk Aggressive[/orange3]", border_style="orange3"))
+                        title="[orange3]4. Risk Aggressive (ưu upside)[/orange3]", border_style="orange3"))
     console.print(Panel(result.risk_neutral.strip(),
-                        title="[yellow]5. Risk Neutral[/yellow]", border_style="yellow"))
+                        title="[yellow]5. Risk Neutral (cân bằng)[/yellow]", border_style="yellow"))
     console.print(Panel(result.risk_conservative.strip(),
-                        title="[blue]6. Risk Conservative[/blue]", border_style="blue"))
+                        title="[blue]6. Risk Conservative (ưu bảo vệ vốn)[/blue]", border_style="blue"))
 
     if news:
         console.print(Panel(news.strip(), title="News brief", border_style="dim"))
@@ -91,8 +93,32 @@ def render_proposal(setup, result, news: str, lot: float) -> None:
     vcolor = "green" if v.decision == "GO" else "yellow"
     console.print(Panel(
         f"[bold {vcolor}]{v.decision}[/bold {vcolor}]  confidence={v.confidence}  {v.summary}",
-        title="[bold]Judge (final)[/bold]", border_style=vcolor,
+        title="[bold]Judge (quan tòa quyết)[/bold]", border_style=vcolor,
     ))
+
+    _render_final_verdict(setup, v)
+
+
+def _render_final_verdict(setup, verdict) -> None:
+    """Panel kết luận cuối — plain Vietnamese, dễ đọc cho người không quen bot."""
+    if verdict.decision == "GO":
+        body = (
+            f"[bold green]✓ NÊN VÀO LỆNH {setup.side}[/bold green]\n"
+            f"Bot sẽ hỏi bạn duyệt Y/N tiếp.\n"
+            f"[dim]Lý do GO: {verdict.summary}[/dim]"
+        )
+        border = "green"
+    else:
+        body = (
+            f"[bold yellow]✗ KHÔNG VÀO LỆNH BÂY GIỜ[/bold yellow]\n"
+            f"[bold]Hướng phân tích vẫn là [/bold]"
+            f"[{'green' if setup.side == 'BUY' else 'red'}]{setup.side}[/{'green' if setup.side == 'BUY' else 'red'}]"
+            f"[bold] — nhưng setup hiện tại chưa đủ chất lượng để vào.[/bold]\n"
+            f"[dim]Lý do bỏ qua: {verdict.summary}[/dim]\n"
+            f"→ Chờ M15 close kế tiếp, gõ [yellow]xau-agent hunt[/yellow] lại."
+        )
+        border = "yellow"
+    console.print(Panel(body, title="[bold]🎯 KẾT LUẬN[/bold]", border_style=border))
 
 
 def render_execution_plan(plan, default_lot: float) -> None:

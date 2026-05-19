@@ -160,7 +160,7 @@ def _scan_once(dry_run_override: bool | None = None) -> None:
     display.render_proposal(su, result, news, s.default_lot)
 
     if result.verdict.decision != "GO":
-        display.render_skip(f"judge SKIP (confidence={result.verdict.confidence})")
+        # Final verdict panel đã render trong render_proposal (🎯 KẾT LUẬN), không cần render_skip dư.
         log_trade(_build_record(su, verdict, result, None, tv_map, news,
                                 user_decision="", ticket=0, lot=s.default_lot, dry_run=dry_run))
         return
@@ -264,7 +264,7 @@ def _hunt_once(side_override: str | None, dry_run_override: bool | None = None) 
     display.render_proposal(su, result, news, s.default_lot)
 
     if result.verdict.decision != "GO":
-        display.render_skip(f"judge SKIP (confidence={result.verdict.confidence})")
+        # Final verdict panel đã render trong render_proposal (🎯 KẾT LUẬN), không cần render_skip dư.
         log_trade(_build_record(su, verdict, result, None, tv_map, news,
                                 user_decision="", ticket=0, lot=s.default_lot, dry_run=dry_run))
         return
