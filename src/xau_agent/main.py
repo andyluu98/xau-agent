@@ -324,6 +324,138 @@ def _cmd_tv(args: argparse.Namespace) -> None:
     display.render_tv_consensus(tv_map)
 
 
+def _zones_text_summary(zones, current_price: float, top_n: int = 8) -> str:
+    """Compact text từ zones list để inject vào prompt LLM."""
+    if not zones:
+        return ""
+    lines = [f"Top {min(top_n, len(zones))} zones gần giá {current_price:.2f}:"]
+    for z in zones[:top_n]:
+        side = "trên" if z.distance > 0 else "dưới"
+        lines.append(
+            f"  {z.price:.2f}  ({side} {abs(z.distance):.2f})  "
+            f"[{z.tf}] {z.kind}: {z.note}"
+        )
+    return "\n".join(lines)
+
+
+def _cmd_dayplan(args: argparse.Namespace) -> None:
+    """Kế hoạch giao dịch trong ngày — kịch bản đa nhánh, KHÔNG hỏi Y/N, KHÔNG gửi lệnh."""
+    from xau_agent.analysis import zones as zones_mod
+    from xau_agent.cli.dayplan_display import render_dayplan
+    from xau_agent.history import build_brief
+    from xau_agent.llm import dayplan as llm_dayplan
+
+    s = get_settings()
+    display.banner(s.symbol, s.entry_tf, s.trend_tf_list, dry_run=True)
+
+    with connector.session():
+        all_tfs = [s.entry_tf] + s.trend_tf_list
+        data = fetcher.fetch_multi_tf(s.symbol, all_tfs, count=s.bars_lookback)
+        bid, ask = fetcher.current_price(s.symbol)
+        mid = (bid + ask) / 2
+
+        verdict = trend_mod.evaluate({tf: data[tf] for tf in s.trend_tf_list})
+        display.render_trend(verdict.per_tf)
+
+        zlist = zones_mod.detect(data["M15"], data["H1"], data["H4"], mid, atr_period=s.atr_period)
+        zones_summary = _zones_text_summary(zlist, mid, top_n=8)
+
+        tv_map = tv.fetch_consensus(s.tv_symbol, s.tv_exchange, s.tv_screener,
+                                    [s.entry_tf] + s.trend_tf_list)
+        display.render_tv_consensus(tv_map)
+
+        news = tavily.brief()
+        history = build_brief(days=args.history_days, journal_limit=args.history_journal)
+
+        side = "BUY" if verdict.direction == "UP" else "SELL"
+        su = setup_mod.build_forced(
+            data[s.entry_tf], side,  # type: ignore[arg-type]
+            atr_sl_mult=s.atr_sl_mult, atr_tp_mult=s.atr_tp_mult, atr_period=s.atr_period,
+        )
+
+        log.info("Calling Day Planner... (~2 LLM calls, ~$0.002)")
+        plan = llm_dayplan.run_dayplan(
+            asdict(su), _trend_to_dict(verdict), news, tv.to_dict(tv_map),
+            zones_summary=zones_summary,
+            history_brief=history.text,
+        )
+        render_dayplan(plan, current_price=mid, symbol=s.symbol)
+
+
+def _cmd_plan_now(args: argparse.Namespace) -> None:
+    """Săn 1 thời điểm CÓ NHÌN QUÁ KHỨ — hunt + history-aware debate."""
+    from xau_agent.history import build_brief
+
+    s = get_settings()
+    dry_run = s.dry_run if not args.live else False
+    display.banner(s.symbol, s.entry_tf, s.trend_tf_list, dry_run)
+
+    with connector.session():
+        if _kill_gate(s.symbol):
+            return
+        if _news_blackout_gate():
+            return
+
+        all_tfs = [s.entry_tf] + s.trend_tf_list
+        data = fetcher.fetch_multi_tf(s.symbol, all_tfs, count=s.bars_lookback)
+        verdict = trend_mod.evaluate({tf: data[tf] for tf in s.trend_tf_list})
+        display.render_trend(verdict.per_tf)
+
+        if args.side:
+            side = args.side.upper()
+        elif verdict.aligned:
+            side = "BUY" if verdict.direction == "UP" else "SELL"
+        else:
+            display.render_skip("trend not aligned and no --side override", verdict.reason)
+            return
+
+        su = setup_mod.build_forced(
+            data[s.entry_tf], side,  # type: ignore[arg-type]
+            atr_sl_mult=s.atr_sl_mult, atr_tp_mult=s.atr_tp_mult, atr_period=s.atr_period,
+        )
+
+        news = tavily.brief()
+        tv_map = tv.fetch_consensus(s.tv_symbol, s.tv_exchange, s.tv_screener,
+                                    [s.entry_tf] + s.trend_tf_list)
+        display.render_tv_consensus(tv_map)
+
+        history = build_brief(days=args.history_days, journal_limit=args.history_journal)
+        log.info("History brief: closed=%d W:%d L:%d net=%+.2f open=%d pending=%d",
+                 history.closed_deals, history.wins, history.losses, history.net_pnl,
+                 history.open_positions, history.pending_orders)
+
+        result = llm_agents.run_debate(asdict(su), _trend_to_dict(verdict), news,
+                                       tv=tv.to_dict(tv_map), history=history.text)
+        display.render_proposal(su, result, news, s.default_lot)
+
+        if result.verdict.decision != "GO":
+            log_trade(_build_record(su, verdict, result, None, tv_map, news,
+                                    user_decision="", ticket=0, lot=s.default_lot, dry_run=dry_run))
+            return
+
+        plan = llm_exec.design_execution(
+            asdict(su), _trend_to_dict(verdict), news, tv.to_dict(tv_map),
+            result.macro, result.verdict.summary,
+        )
+        display.render_execution_plan(plan, s.default_lot)
+        sl_dist = abs(su.entry - su.sl)
+        final_lot = _resolve_lot(s.symbol, sl_dist, plan.lot_multiplier)
+
+        choice = prompt.ask_approval()
+        if choice != "YES":
+            display.render_skip(f"user said {choice}")
+            log_trade(_build_record(su, verdict, result, plan, tv_map, news,
+                                    user_decision=choice, ticket=0, lot=final_lot, dry_run=dry_run))
+            return
+
+        req = executor.OrderRequest(symbol=s.symbol, side=su.side, lot=final_lot, sl=su.sl, tp=su.tp)
+        res = executor.place(req, dry_run=dry_run)
+        display.render_result(res.ok, res.message, res.ticket, res.price)
+        log_trade(_build_record(su, verdict, result, plan, tv_map, news,
+                                user_decision="YES", ticket=res.ticket or 0,
+                                lot=final_lot, dry_run=dry_run))
+
+
 def _cmd_zones(args: argparse.Namespace) -> None:
     """In các vùng mua/bán quan trọng từ MT5 data, không gọi LLM."""
     from xau_agent.analysis import zones as zones_mod
@@ -376,6 +508,29 @@ def cli() -> None:
 
     p_reset = sub.add_parser("reset-kill", help="xoa flag kill switch (G2) thu cong")
     p_reset.set_defaults(func=_cmd_reset_kill)
+
+    p_dayplan = sub.add_parser(
+        "dayplan",
+        help="lap ke hoach giao dich trong ngay (multi-scenario, no Y/N, no order)",
+    )
+    p_dayplan.add_argument("--history-days", type=int, default=7,
+                           help="MT5 history window (ngay) — default 7")
+    p_dayplan.add_argument("--history-journal", type=int, default=10,
+                           help="So entry journal CSV gan nhat — default 10")
+    p_dayplan.set_defaults(func=_cmd_dayplan)
+
+    p_planow = sub.add_parser(
+        "plan-now",
+        help="san 1 thoi diem voi CONTEXT QUA KHU (history-aware debate, hoi Y/N nhu hunt)",
+    )
+    p_planow.add_argument("--side", choices=["BUY", "SELL"], default=None,
+                          help="force side; if omitted and trend aligned, uses trend direction")
+    p_planow.add_argument("--live", action="store_true", help="disable dry-run")
+    p_planow.add_argument("--history-days", type=int, default=7,
+                          help="MT5 history window (ngay) — default 7")
+    p_planow.add_argument("--history-journal", type=int, default=10,
+                          help="So entry journal CSV gan nhat — default 10")
+    p_planow.set_defaults(func=_cmd_plan_now)
 
     args = parser.parse_args()
     s = get_settings()

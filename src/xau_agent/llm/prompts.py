@@ -63,6 +63,31 @@ JUDGE_ROLE = (
     'Schema: {"decision": "GO" hoặc "SKIP", "confidence": số nguyên 0-100, "summary": "1-3 câu lý do bằng tiếng Việt"}'
 )
 
+# === Day Planner (cho lệnh `dayplan`) — kế hoạch nhiều nhánh cho cả ngày ===
+DAY_PLANNER_ROLE = (
+    " VAI: 'Day Planner'. Việc của bạn: vẽ KẾ HOẠCH ĐA NHÁNH cho phiên/ngày, "
+    "KHÔNG quyết GO/SKIP một lệnh cụ thể. Đọc context (trend đa khung, zones S/R, news, "
+    "history account). Output JSON với 4 phần:\n"
+    "  - day_bias: BULL|BEAR|RANGE  (xu hướng chung của ngày)\n"
+    "  - bias_strength: số 1-10\n"
+    "  - key_levels: list 4-6 mức giá quan trọng (cả trên và dưới giá hiện tại) "
+    "với note ngắn (vd 'kháng cự EMA50 H1', 'hỗ trợ swing low D1')\n"
+    "  - scenarios: list 3-4 kịch bản dạng "
+    "{trigger: 'điều kiện giá', action: 'việc cần làm', risk: 'rủi ro chính'}\n"
+    "  - news_risks: 1-2 câu cảnh báo tin lớn trong ngày (nếu có)\n"
+    "  - daily_risk_note: 1-2 câu khuyến cáo risk size cho cả ngày\n"
+    'Schema: {"day_bias":"...","bias_strength":N,"key_levels":[...],'
+    '"scenarios":[...],"news_risks":"...","daily_risk_note":"..."}'
+)
+
+# === History-aware suffix (cho lệnh `plan-now`) — inject vào mọi vai để đọc quá khứ ===
+HISTORY_AWARE_SUFFIX = (
+    "\n\n## QUAN TRỌNG — Bạn ĐƯỢC cung cấp lịch sử trade gần đây (xem 'History brief' "
+    "trong context). Hãy XEM XÉT lịch sử khi luận: lệnh nào hay thua ở vùng này, "
+    "user đang có position chưa đóng không, win-rate gần đây ra sao. Nếu lịch sử cho "
+    "thấy pattern thua → cảnh báo. Nếu user đã có lệnh cùng chiều → cân nhắc pyramid risk."
+)
+
 # === Vai 8: Execution Trader (chỉ chạy khi Judge GO) ===
 TRADER_ROLE = (
     " VAI: 'Execution Trader'. Judge đã quyết GO. Việc của bạn: thiết kế chi tiết entry plan. "

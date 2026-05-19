@@ -13,8 +13,8 @@ from dataclasses import dataclass
 
 from xau_agent.llm.deepseek import chat
 from xau_agent.llm.prompts import (
-    BEAR_ROLE, BULL_ROLE, JUDGE_ROLE, MACRO_ROLE, RISK_AGGRESSIVE_ROLE,
-    RISK_CONSERVATIVE_ROLE, RISK_NEUTRAL_ROLE, SYSTEM_BASE,
+    BEAR_ROLE, BULL_ROLE, HISTORY_AWARE_SUFFIX, JUDGE_ROLE, MACRO_ROLE,
+    RISK_AGGRESSIVE_ROLE, RISK_CONSERVATIVE_ROLE, RISK_NEUTRAL_ROLE, SYSTEM_BASE,
 )
 
 log = logging.getLogger(__name__)
@@ -38,7 +38,8 @@ class DebateResult:
     verdict: Verdict
 
 
-def _format_context(setup: dict, trend: dict, news: str, tv: dict | None = None) -> str:
+def _format_context(setup: dict, trend: dict, news: str, tv: dict | None = None,
+                    history: str | None = None) -> str:
     parts = [
         "## Technical setup (M15)", json.dumps(setup, ensure_ascii=False, indent=2),
         "",
@@ -48,54 +49,67 @@ def _format_context(setup: dict, trend: dict, news: str, tv: dict | None = None)
     if tv:
         parts += ["", "## TradingView 26-indicator consensus", json.dumps(tv, ensure_ascii=False, indent=2)]
     parts += ["", "## News brief", news or "(no fresh news)"]
+    if history:
+        parts += ["", "## History brief (account + journal)", history]
     return "\n".join(parts)
 
 
-def _call_role(role_prompt: str, ctx: str, user_directive: str, temp: float = 0.5, max_tok: int = 400) -> str:
+def _call_role(role_prompt: str, ctx: str, user_directive: str, temp: float = 0.5,
+               max_tok: int = 400, history_aware: bool = False) -> str:
+    system_content = SYSTEM_BASE + role_prompt
+    if history_aware:
+        system_content += HISTORY_AWARE_SUFFIX
     msgs = [
-        {"role": "system", "content": SYSTEM_BASE + role_prompt},
+        {"role": "system", "content": system_content},
         {"role": "user", "content": ctx + "\n\n" + user_directive},
     ]
     return chat(msgs, temperature=temp, max_tokens=max_tok)
 
 
-def macro_analyst(setup: dict, trend: dict, news: str, tv: dict | None = None) -> str:
-    ctx = _format_context(setup, trend, news, tv)
+def macro_analyst(setup: dict, trend: dict, news: str, tv: dict | None = None,
+                  history: str | None = None) -> str:
+    ctx = _format_context(setup, trend, news, tv, history)
     return _call_role(MACRO_ROLE, ctx,
                       f"Phân tích context tổng quan cho lệnh {setup.get('side', '?')} này.",
-                      temp=0.3, max_tok=350)
+                      temp=0.3, max_tok=350, history_aware=bool(history))
 
 
-def bull_case(setup: dict, trend: dict, news: str, tv: dict | None = None, macro: str = "") -> str:
-    ctx = _format_context(setup, trend, news, tv)
+def bull_case(setup: dict, trend: dict, news: str, tv: dict | None = None, macro: str = "",
+              history: str | None = None) -> str:
+    ctx = _format_context(setup, trend, news, tv, history)
     if macro:
         ctx += f"\n\n## Macro Analyst context\n{macro}"
-    return _call_role(BULL_ROLE, ctx, f"Viết lập luận ỦNG HỘ lệnh {setup.get('side', '?')} này.", temp=0.5)
+    return _call_role(BULL_ROLE, ctx, f"Viết lập luận ỦNG HỘ lệnh {setup.get('side', '?')} này.",
+                      temp=0.5, history_aware=bool(history))
 
 
-def bear_case(setup: dict, trend: dict, news: str, tv: dict | None = None, macro: str = "") -> str:
-    ctx = _format_context(setup, trend, news, tv)
+def bear_case(setup: dict, trend: dict, news: str, tv: dict | None = None, macro: str = "",
+              history: str | None = None) -> str:
+    ctx = _format_context(setup, trend, news, tv, history)
     if macro:
         ctx += f"\n\n## Macro Analyst context\n{macro}"
-    return _call_role(BEAR_ROLE, ctx, f"Viết lập luận PHẢN ĐỐI lệnh {setup.get('side', '?')} này.", temp=0.5)
+    return _call_role(BEAR_ROLE, ctx, f"Viết lập luận PHẢN ĐỐI lệnh {setup.get('side', '?')} này.",
+                      temp=0.5, history_aware=bool(history))
 
 
-def _risk_call(role: str, setup: dict, trend: dict, news: str, tv: dict | None, bull: str, bear: str) -> str:
-    ctx = (_format_context(setup, trend, news, tv)
+def _risk_call(role: str, setup: dict, trend: dict, news: str, tv: dict | None,
+               bull: str, bear: str, history: str | None = None) -> str:
+    ctx = (_format_context(setup, trend, news, tv, history)
            + f"\n\n## Bull argument\n{bull}\n\n## Bear argument\n{bear}")
-    return _call_role(role, ctx, "Đưa quan điểm rủi ro của bạn cho lệnh này.", temp=0.4, max_tok=300)
+    return _call_role(role, ctx, "Đưa quan điểm rủi ro của bạn cho lệnh này.",
+                      temp=0.4, max_tok=300, history_aware=bool(history))
 
 
-def risk_aggressive(setup, trend, news, tv, bull, bear) -> str:
-    return _risk_call(RISK_AGGRESSIVE_ROLE, setup, trend, news, tv, bull, bear)
+def risk_aggressive(setup, trend, news, tv, bull, bear, history=None) -> str:
+    return _risk_call(RISK_AGGRESSIVE_ROLE, setup, trend, news, tv, bull, bear, history)
 
 
-def risk_neutral(setup, trend, news, tv, bull, bear) -> str:
-    return _risk_call(RISK_NEUTRAL_ROLE, setup, trend, news, tv, bull, bear)
+def risk_neutral(setup, trend, news, tv, bull, bear, history=None) -> str:
+    return _risk_call(RISK_NEUTRAL_ROLE, setup, trend, news, tv, bull, bear, history)
 
 
-def risk_conservative(setup, trend, news, tv, bull, bear) -> str:
-    return _risk_call(RISK_CONSERVATIVE_ROLE, setup, trend, news, tv, bull, bear)
+def risk_conservative(setup, trend, news, tv, bull, bear, history=None) -> str:
+    return _risk_call(RISK_CONSERVATIVE_ROLE, setup, trend, news, tv, bull, bear, history)
 
 
 _DECISION_RE = re.compile(r'"decision"\s*:\s*"(GO|SKIP)"', re.IGNORECASE)
@@ -131,10 +145,14 @@ def _parse_verdict(raw: str) -> Verdict:
 
 def judge(setup: dict, trend: dict, news: str, tv: dict | None,
           macro: str, bull: str, bear: str,
-          risk_agg: str, risk_neu: str, risk_con: str) -> Verdict:
-    ctx = _format_context(setup, trend, news, tv)
+          risk_agg: str, risk_neu: str, risk_con: str,
+          history: str | None = None) -> Verdict:
+    ctx = _format_context(setup, trend, news, tv, history)
+    system_content = SYSTEM_BASE + JUDGE_ROLE
+    if history:
+        system_content += HISTORY_AWARE_SUFFIX
     msgs = [
-        {"role": "system", "content": SYSTEM_BASE + JUDGE_ROLE},
+        {"role": "system", "content": system_content},
         {"role": "user", "content": (
             f"{ctx}\n\n"
             f"## Macro Analyst\n{macro}\n\n"
@@ -150,15 +168,20 @@ def judge(setup: dict, trend: dict, news: str, tv: dict | None,
     return _parse_verdict(raw)
 
 
-def run_debate(setup: dict, trend: dict, news: str, tv: dict | None = None) -> DebateResult:
-    """Full 6-vai debate. Gọi tuần tự (không parallel vì Bull/Bear cần macro context)."""
-    macro = macro_analyst(setup, trend, news, tv)
-    bull = bull_case(setup, trend, news, tv, macro)
-    bear = bear_case(setup, trend, news, tv, macro)
-    risk_agg = risk_aggressive(setup, trend, news, tv, bull, bear)
-    risk_neu = risk_neutral(setup, trend, news, tv, bull, bear)
-    risk_con = risk_conservative(setup, trend, news, tv, bull, bear)
-    v = judge(setup, trend, news, tv, macro, bull, bear, risk_agg, risk_neu, risk_con)
+def run_debate(setup: dict, trend: dict, news: str, tv: dict | None = None,
+               history: str | None = None) -> DebateResult:
+    """Full 6-vai debate. Gọi tuần tự (không parallel vì Bull/Bear cần macro context).
+
+    history: optional history brief text — nếu có, mọi vai sẽ được cấp HISTORY_AWARE_SUFFIX
+    để cân nhắc context quá khứ (dùng cho lệnh `plan-now`).
+    """
+    macro = macro_analyst(setup, trend, news, tv, history)
+    bull = bull_case(setup, trend, news, tv, macro, history)
+    bear = bear_case(setup, trend, news, tv, macro, history)
+    risk_agg = risk_aggressive(setup, trend, news, tv, bull, bear, history)
+    risk_neu = risk_neutral(setup, trend, news, tv, bull, bear, history)
+    risk_con = risk_conservative(setup, trend, news, tv, bull, bear, history)
+    v = judge(setup, trend, news, tv, macro, bull, bear, risk_agg, risk_neu, risk_con, history)
     return DebateResult(
         macro=macro, bull=bull, bear=bear,
         risk_aggressive=risk_agg, risk_neutral=risk_neu, risk_conservative=risk_con,

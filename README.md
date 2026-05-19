@@ -72,7 +72,7 @@ Nếu muốn bot **gửi/sửa lệnh** thật (không chỉ dry-run):
 ### 5. Verify
 
 ```bash
-pytest -v                    # phải pass 7/7
+pytest -v                    # phải pass 24/24
 xau-agent plan               # in chiến lược (không cần MT5)
 xau-agent tv                 # in TradingView consensus (không cần MT5)
 ```
@@ -81,7 +81,7 @@ Nếu cả 3 OK → setup xong, đi tiếp.
 
 ---
 
-## 8 lệnh CLI
+## 10 lệnh CLI
 
 | Lệnh | Bot làm gì | Cần MT5? | Cần LLM? |
 |---|---|---|---|
@@ -93,9 +93,28 @@ Nếu cả 3 OK → setup xong, đi tiếp.
 | `xau-agent hunt` | **Săn 1 lần** — 6 vai tranh luận + đề xuất Y/N | ✅ | ✅ |
 | `xau-agent scan-once` | Quét 1 lần với gate strict (chỉ trade setup đẹp) | ✅ | ✅ |
 | `xau-agent run` | Loop liên tục mỗi M15 close | ✅ | ✅ |
+| `xau-agent dayplan` | **Kế hoạch trong ngày** — kịch bản đa nhánh, không hỏi Y/N | ✅ | ✅ (2 calls) |
+| `xau-agent plan-now` | **Săn + nhìn quá khứ** — hunt có history-aware debate | ✅ | ✅ (8 calls) |
 
 **Mặc định mọi lệnh trade ở chế độ `DRY_RUN=true`** — bot chỉ in lệnh, không gửi MT5.
 Để gửi thật: thêm `--live`. Ví dụ: `xau-agent hunt --live`.
+
+### `dayplan` vs `plan-now` vs `hunt` — khác nhau thế nào?
+
+| | `hunt` | `plan-now` | `dayplan` |
+|---|---|---|---|
+| Mục đích | Săn 1 setup ngay | Săn 1 setup, có context quá khứ | Vẽ bản đồ cả ngày |
+| Số LLM calls | 7–8 | 7–8 | 2 |
+| Output | GO/SKIP + Y/N | GO/SKIP + Y/N (vai cãi có lịch sử) | Bias ngày + key levels + 3-4 kịch bản |
+| Có hỏi Y/N? | Có | Có | KHÔNG |
+| Có gửi lệnh? | Có (`--live`) | Có (`--live`) | KHÔNG |
+| Valid trong | ~15 phút | ~15 phút | Cả phiên/ngày |
+| Cost | ~$0.008 | ~$0.012 (prompt to hơn vì có history) | ~$0.002 |
+
+**Khi nào dùng:**
+- `dayplan` mỗi sáng để có bản đồ cả ngày
+- `plan-now` khi định bấm nút mà muốn AI nhớ bạn vừa thua/thắng setup tương tự
+- `hunt` khi muốn ý kiến độc lập, không kéo theo bias quá khứ
 
 ---
 
@@ -131,7 +150,7 @@ MT5 connect (1s)
 ```
 src/xau_agent/
 ├── config.py                      # pydantic Settings, load .env (15+ params)
-├── main.py                        # CLI entry với 8 subcommand
+├── main.py                        # CLI entry với 10 subcommand
 ├── journal.py                     # G1: TradeRecord 32-col + log_trade + read_trades
 ├── risk_manager.py                # G2: daily DD kill switch (state/kill_switch.flag)
 ├── mt5/
@@ -144,16 +163,20 @@ src/xau_agent/
 │   ├── setup.py                   # M15 entry detect (strict + forced)
 │   └── zones.py                   # S/R + EMA + swing + round levels
 ├── llm/
-│   ├── prompts.py                 # 8 role prompts (system_base + 7 vai)
-│   ├── agents.py                  # 6-vai debate orchestration
+│   ├── prompts.py                 # role prompts (base + 7 vai + Day Planner + history-aware)
+│   ├── agents.py                  # 6-vai debate orchestration (history-aware optional)
+│   ├── dayplan.py                 # Day Planner orchestration (2 LLM calls)
 │   ├── execution.py               # Execution Trader (vai #7)
 │   └── deepseek.py                # HTTP client (OpenAI-compat, json_mode)
+├── history/
+│   └── loader.py                  # MT5 deals + journal CSV → context brief cho LLM
 ├── external/
 │   └── tradingview_ta.py          # TV 26-indicator (tradingview-ta lib)
 ├── news/
 │   └── tavily.py                  # Gold/Fed/USD news brief, cache 1h
 └── cli/
     ├── display.py                 # rich panels (banner, trend, debate, result)
+    ├── dayplan_display.py         # rich panels for day plan (bias, levels, scenarios)
     ├── prompt.py                  # Y/N/S input
     ├── plan.py                    # in-CLI strategy summary
     ├── zones_display.py           # rich table cho buy/sell zones
