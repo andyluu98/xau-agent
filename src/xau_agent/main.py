@@ -393,8 +393,6 @@ def _cmd_plan_now(args: argparse.Namespace) -> None:
     with connector.session():
         if _kill_gate(s.symbol):
             return
-        if _news_blackout_gate():
-            return
 
         all_tfs = [s.entry_tf] + s.trend_tf_list
         data = fetcher.fetch_multi_tf(s.symbol, all_tfs, count=s.bars_lookback)
