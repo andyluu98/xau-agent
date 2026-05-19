@@ -30,18 +30,17 @@ Danh sách tính năng đã thiết kế trong spec nhưng **chưa code**. Đán
 
 ## 🔥 P0 — CẦN cho Phase 1 Paper Trade
 
-### G1. Sổ tay CSV (Trade Journal)
+### G1. Sổ tay CSV (Trade Journal) — ✅ DONE 2026-05-19
 
-**Vấn đề:** Hiện không log lệnh nào. Không có data → không review được → không cải tiến được.
+**Đã làm:**
+- `src/xau_agent/journal.py` (~110 LOC) — TradeRecord 32 cột + log_trade + read_trades + parse helpers
+- Tự động log mỗi phiên có Judge verdict (cả SKIP và GO) vào `state/trades.csv`
+- Subcommand `xau-agent journal [--limit N]` in N lệnh gần nhất
+- 6 unit tests bổ sung trong `tests/test_journal.py`
 
-**Spec:**
-- Tạo `src/xau_agent/journal.py`
-- Mỗi lệnh `executor.place()` thành công → append 1 row vào `state/trades.csv`
-- Columns: `timestamp, ticket, side, entry, sl, tp, lot, atr, rsi, macd_hist, trend_h1, trend_h4, tv_m15_reco, tv_h1_reco, tv_h4_reco, news_tldr, bull_summary, bear_summary, macro_bias, macro_strength, judge_decision, judge_confidence, judge_summary, exec_strategy, exec_lot_mul, exec_hold_rule, user_decision, exit_time, exit_price, pnl_usc, hold_minutes`
-- Thêm subcommand `xau-agent journal` để in 10 lệnh gần nhất bằng rich table
-
-**Effort:** ~120 LOC, 1 commit
-**Phụ thuộc:** không
+**Còn thiếu (để G6 trade_monitor xử lý):**
+- Update `exit_time`, `exit_price`, `pnl_usc`, `hold_minutes` khi lệnh đóng
+- Hiện các cột này = giá trị default (0/empty) khi log entry
 
 ### G2. Daily DD Kill Switch
 

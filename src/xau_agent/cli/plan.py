@@ -26,6 +26,7 @@ def show_plan() -> None:
     t.add_row("tv", "In TV 26-indicator consensus (free, no MT5)", "Xem 26 indicator vote nhanh")
     t.add_row("zones", "In vùng MUA/BÁN (S/R, EMA, swing, round)", "Tìm vùng entry/exit")
     t.add_row("plan", "In chiến lược này", "Đọc lại cách bot hoạt động")
+    t.add_row("journal", "In sổ tay CSV — lệnh gần nhất + Judge/User decision", "Review bot performance")
     console.print(t)
 
     # === 6 bước trong hunt ===

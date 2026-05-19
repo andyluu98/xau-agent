@@ -12,6 +12,9 @@ from xau_agent.analysis import trend as trend_mod
 from xau_agent.cli import display, prompt
 from xau_agent.config import get_settings
 from xau_agent.external import tradingview_ta as tv
+from xau_agent.journal import (
+    TradeRecord, log_trade, parse_macro_bias_strength, summarize,
+)
 from xau_agent.llm import agents as llm_agents
 from xau_agent.llm import execution as llm_exec
 from xau_agent.mt5 import connector, executor, fetcher
@@ -25,6 +28,40 @@ def _setup_logging(level: str) -> None:
         level=getattr(logging, level.upper(), logging.INFO),
         format="%(asctime)s %(levelname)s %(name)s | %(message)s",
         datefmt="%H:%M:%S",
+    )
+
+
+def _build_record(
+    su, verdict, result, plan, tv_map, news,
+    user_decision: str, ticket: int, lot: float, dry_run: bool,
+) -> TradeRecord:
+    """Tổng hợp toàn bộ context phiên săn → TradeRecord để log."""
+    bias, strength = parse_macro_bias_strength(result.macro)
+    h1 = next((t.direction for t in verdict.per_tf if t.tf == "H1"), "")
+    h4 = next((t.direction for t in verdict.per_tf if t.tf == "H4"), "")
+    m15c = tv_map.get("M15")
+    h1c = tv_map.get("H1")
+    h4c = tv_map.get("H4")
+    return TradeRecord(
+        ticket=ticket,
+        side=su.side, entry=su.entry, sl=su.sl, tp=su.tp, lot=lot,
+        atr=su.atr, rsi=su.rsi, macd_hist=su.macd_hist,
+        trend_h1=h1, trend_h4=h4,
+        tv_m15_reco=m15c.recommendation if m15c else "",
+        tv_h1_reco=h1c.recommendation if h1c else "",
+        tv_h4_reco=h4c.recommendation if h4c else "",
+        news_tldr=summarize(news),
+        bull_summary=summarize(result.bull),
+        bear_summary=summarize(result.bear),
+        macro_bias=bias, macro_strength=strength,
+        judge_decision=result.verdict.decision,
+        judge_confidence=result.verdict.confidence,
+        judge_summary=result.verdict.summary,
+        exec_strategy=plan.entry_strategy if plan else "",
+        exec_lot_mul=plan.lot_multiplier if plan else 1.0,
+        exec_hold_rule=plan.hold_rule if plan else "",
+        user_decision=user_decision,
+        dry_run=dry_run,
     )
 
 
@@ -82,6 +119,8 @@ def _scan_once(dry_run_override: bool | None = None) -> None:
 
     if result.verdict.decision != "GO":
         display.render_skip(f"judge SKIP (confidence={result.verdict.confidence})")
+        log_trade(_build_record(su, verdict, result, None, tv_map, news,
+                                user_decision="", ticket=0, lot=s.default_lot, dry_run=dry_run))
         return
 
     # Execution Trader (vai #7): thiết kế entry plan
@@ -96,6 +135,8 @@ def _scan_once(dry_run_override: bool | None = None) -> None:
     choice = prompt.ask_approval()
     if choice != "YES":
         display.render_skip(f"user said {choice}")
+        log_trade(_build_record(su, verdict, result, plan, tv_map, news,
+                                user_decision=choice, ticket=0, lot=final_lot, dry_run=dry_run))
         return
 
     # Execute (or dry-run) — dùng lot từ Execution Trader
@@ -104,6 +145,9 @@ def _scan_once(dry_run_override: bool | None = None) -> None:
     )
     res = executor.place(req, dry_run=dry_run)
     display.render_result(res.ok, res.message, res.ticket, res.price)
+    log_trade(_build_record(su, verdict, result, plan, tv_map, news,
+                            user_decision="YES", ticket=res.ticket or 0,
+                            lot=final_lot, dry_run=dry_run))
 
 
 def _wait_next_m15_close() -> None:
@@ -175,6 +219,8 @@ def _hunt_once(side_override: str | None, dry_run_override: bool | None = None) 
 
     if result.verdict.decision != "GO":
         display.render_skip(f"judge SKIP (confidence={result.verdict.confidence})")
+        log_trade(_build_record(su, verdict, result, None, tv_map, news,
+                                user_decision="", ticket=0, lot=s.default_lot, dry_run=dry_run))
         return
 
     plan = llm_exec.design_execution(
@@ -187,11 +233,16 @@ def _hunt_once(side_override: str | None, dry_run_override: bool | None = None) 
     choice = prompt.ask_approval()
     if choice != "YES":
         display.render_skip(f"user said {choice}")
+        log_trade(_build_record(su, verdict, result, plan, tv_map, news,
+                                user_decision=choice, ticket=0, lot=final_lot, dry_run=dry_run))
         return
 
     req = executor.OrderRequest(symbol=s.symbol, side=su.side, lot=final_lot, sl=su.sl, tp=su.tp)
     res = executor.place(req, dry_run=dry_run)
     display.render_result(res.ok, res.message, res.ticket, res.price)
+    log_trade(_build_record(su, verdict, result, plan, tv_map, news,
+                            user_decision="YES", ticket=res.ticket or 0,
+                            lot=final_lot, dry_run=dry_run))
 
 
 def _cmd_hunt(args: argparse.Namespace) -> None:
@@ -202,6 +253,11 @@ def _cmd_hunt(args: argparse.Namespace) -> None:
 def _cmd_plan(args: argparse.Namespace) -> None:
     from xau_agent.cli.plan import show_plan
     show_plan()
+
+
+def _cmd_journal(args: argparse.Namespace) -> None:
+    from xau_agent.cli.journal_display import render_recent
+    render_recent(limit=args.limit)
 
 
 def _cmd_tv(args: argparse.Namespace) -> None:
@@ -258,6 +314,10 @@ def cli() -> None:
     p_tv = sub.add_parser("tv", help="in TradingView 26-indicator consensus (free, no auth)")
     p_tv.add_argument("--refresh", action="store_true", help="bypass cache 5min")
     p_tv.set_defaults(func=_cmd_tv)
+
+    p_journal = sub.add_parser("journal", help="in N lenh gan nhat tu so tay CSV (state/trades.csv)")
+    p_journal.add_argument("--limit", type=int, default=10, help="so dong de in (default 10)")
+    p_journal.set_defaults(func=_cmd_journal)
 
     args = parser.parse_args()
     s = get_settings()
