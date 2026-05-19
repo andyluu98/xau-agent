@@ -81,13 +81,15 @@ Nếu cả 3 OK → setup xong, đi tiếp.
 
 ---
 
-## 6 lệnh CLI
+## 8 lệnh CLI
 
 | Lệnh | Bot làm gì | Cần MT5? | Cần LLM? |
 |---|---|---|---|
 | `xau-agent plan` | In chiến lược + 6 vai + hướng dẫn | ❌ | ❌ |
 | `xau-agent tv` | In TV 26-indicator consensus (M15/H1/H4) | ❌ | ❌ |
 | `xau-agent zones` | In vùng MUA/BÁN (S/R + EMA + swing + round) | ✅ | ❌ |
+| `xau-agent journal [--limit N]` | In N lệnh gần nhất từ sổ tay CSV | ❌ | ❌ |
+| `xau-agent reset-kill` | Reset thủ công flag daily DD kill switch | ❌ | ❌ |
 | `xau-agent hunt` | **Săn 1 lần** — 6 vai tranh luận + đề xuất Y/N | ✅ | ✅ |
 | `xau-agent scan-once` | Quét 1 lần với gate strict (chỉ trade setup đẹp) | ✅ | ✅ |
 | `xau-agent run` | Loop liên tục mỗi M15 close | ✅ | ✅ |
@@ -128,12 +130,14 @@ MT5 connect (1s)
 
 ```
 src/xau_agent/
-├── config.py                      # pydantic Settings, load .env
-├── main.py                        # CLI entry với 6 subcommand
+├── config.py                      # pydantic Settings, load .env (15+ params)
+├── main.py                        # CLI entry với 8 subcommand
+├── journal.py                     # G1: TradeRecord 32-col + log_trade + read_trades
+├── risk_manager.py                # G2: daily DD kill switch (state/kill_switch.flag)
 ├── mt5/
 │   ├── connector.py               # init/shutdown MT5, attach session
 │   ├── fetcher.py                 # OHLCV M15/H1/H4 + tick price
-│   └── executor.py                # place market order, count positions
+│   └── executor.py                # place market order + calc_lot_by_risk (G3)
 ├── analysis/
 │   ├── indicators.py              # pandas-ta wrappers (EMA/RSI/MACD/BB/ATR)
 │   ├── trend.py                   # H1+H4 EMA alignment
@@ -152,10 +156,15 @@ src/xau_agent/
     ├── display.py                 # rich panels (banner, trend, debate, result)
     ├── prompt.py                  # Y/N/S input
     ├── plan.py                    # in-CLI strategy summary
-    └── zones_display.py           # rich table cho buy/sell zones
+    ├── zones_display.py           # rich table cho buy/sell zones
+    └── journal_display.py         # rich table cho trade journal CSV
+
+state/                             # auto-created, gitignored
+├── trades.csv                     # G1 sổ tay
+└── kill_switch.flag               # G2 daily DD flag
 ```
 
-**Mọi file < 200 LOC** (compliant với CLAUDE.md). Tổng ~2200 LOC.
+**Mọi file < 200 LOC** (compliant với CLAUDE.md). Tổng ~2400 LOC, 16 unit tests.
 
 ---
 

@@ -19,11 +19,14 @@ Danh sách tính năng đã thiết kế trong spec nhưng **chưa code**. Đán
 | Core | **6-vai debate**: Macro + Bull + Bear + 3 Risk + Judge | `llm/agents.py` |
 | Core | **Execution Trader** (vai #7, chỉ chạy khi GO) | `llm/execution.py` |
 | Core | TradingView 26-indicator consensus | `external/tradingview_ta.py` |
-| Core | CLI 6 lệnh: `plan / tv / zones / hunt / scan-once / run` | `main.py` |
+| Core | CLI 8 lệnh: `plan / tv / zones / hunt / scan-once / run / journal / reset-kill` | `main.py` |
 | Core | Rich panel display | `cli/display.py` |
 | Core | Y/N/S approval prompt | `cli/prompt.py` |
 | Core | order_modify để sửa SL/TP lệnh đang mở (đã test live) | `mt5/executor.py` (1-off script) |
-| Tests | 7 unit test pass (config/trend/setup) | `tests/` |
+| **G1** | Trade Journal CSV (32 cột, log cả SKIP và GO) | `journal.py`, `cli/journal_display.py` |
+| **G2** | Daily DD Kill Switch (-3%/ngày → tự khoá) | `risk_manager.py` |
+| **G3** | Risk-based Lot Sizing (1% balance/lệnh) | `mt5/executor.calc_lot_by_risk` |
+| Tests | 16 unit test pass (config/trend/setup/journal/risk) | `tests/` |
 | Docs | README, spec v1, plan plain-Vietnamese | `README.md`, `plans/` |
 
 ---
