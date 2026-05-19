@@ -105,6 +105,16 @@ BLACKOUT_QUERY = (
 )
 BLACKOUT_CACHE_TTL_S = 1800  # 30 phút
 
+# Negation patterns — Tavily hay trả "No Fed rate decision is imminent today"
+# Nếu thấy negation gần keyword/time signal → KHÔNG block.
+NEGATION_PATTERNS = (
+    "no fed", "no fomc", "no cpi", "no nfp", "no rate decision",
+    "not imminent", "not scheduled", "not today",
+    "no major", "no high-impact", "no upcoming",
+    "isn't", "isn't scheduled", "won't", "no release today",
+    "no fed rate", "no major economic",
+)
+
 _blackout_cache = _Cache()
 
 
@@ -131,6 +141,13 @@ def detect_blackout(force_refresh: bool = False) -> tuple[bool, str]:
     answer = (data.get("answer") or "").lower()
     titles = " | ".join((r.get("title") or "").lower() for r in data.get("results", []))
     haystack = f"{answer} {titles}"
+
+    # Check negation FIRST — nếu Tavily nói rõ "no FOMC today" → KHÔNG block
+    matched_negation = next((n for n in NEGATION_PATTERNS if n in haystack), None)
+    if matched_negation:
+        _blackout_cache.text = f"CLEAR|Tavily xác nhận không có tin lớn (negation: '{matched_negation}')"
+        _blackout_cache.fetched_at = now
+        return False, f"Tavily xác nhận không có tin (signal '{matched_negation}')"
 
     matched_event = next((kw for kw in HIGH_IMPACT_KEYWORDS if kw.lower() in haystack), None)
     matched_time = next((w for w in IMMINENCE_PATTERNS if w in haystack), None)

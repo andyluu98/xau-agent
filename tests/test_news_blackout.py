@@ -79,3 +79,28 @@ def test_blackout_failsafe_on_tavily_error(monkeypatch) -> None:
     blocked, reason = tavily.detect_blackout(force_refresh=True)
     assert blocked is False
     assert "fail-safe" in reason
+
+
+def test_blackout_respects_negation(monkeypatch) -> None:
+    """Tavily nói 'No Fed rate decision is imminent today' → KHÔNG block, dù có FOMC + imminent."""
+    _reset_cache(monkeypatch)
+    fake = {
+        "answer": "The next FOMC meeting is scheduled for June 16. No Fed rate decision is imminent today.",
+        "results": [{"title": "FOMC schedule 2026"}],
+    }
+    monkeypatch.setattr(tavily, "_search", lambda *a, **kw: fake)
+    blocked, reason = tavily.detect_blackout(force_refresh=True)
+    assert blocked is False
+    assert "không có tin" in reason or "negation" in reason.lower()
+
+
+def test_blackout_negation_no_fomc_today(monkeypatch) -> None:
+    """'No FOMC today' pattern → false (regression fix for 2026-05-19)."""
+    _reset_cache(monkeypatch)
+    fake = {
+        "answer": "No FOMC meeting scheduled today, gold consolidating",
+        "results": [{"title": "Gold daily analysis"}],
+    }
+    monkeypatch.setattr(tavily, "_search", lambda *a, **kw: fake)
+    blocked, _ = tavily.detect_blackout(force_refresh=True)
+    assert blocked is False
