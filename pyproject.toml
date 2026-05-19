@@ -2,7 +2,7 @@
 name = "xau-agent"
 version = "0.1.0"
 description = "Semi-auto AI agent for XAUUSD M15 scalp on MT5 with H1/H4 trend filter, DeepSeek reasoning, Tavily news"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
     "MetaTrader5>=5.0.45",
     "pandas>=2.2.0",
@@ -36,7 +36,7 @@ packages = ["src/xau_agent"]
 
 [tool.ruff]
 line-length = 110
-target-version = "py311"
+target-version = "py312"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
