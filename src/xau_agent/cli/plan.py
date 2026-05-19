@@ -64,7 +64,7 @@ def show_plan() -> None:
     k.add_row("Judge nói SKIP", "AI không đủ tự tin → không quấy rầy bạn")
     k.add_row("[dim](tương lai)[/dim] Đã 4 lệnh/ngày", "[dim]Tránh overtrade[/dim]")
     k.add_row("[dim](tương lai)[/dim] Lỗ 3%/ngày", "[dim]Bảo vệ tài khoản[/dim]")
-    k.add_row("[dim](tương lai)[/dim] Sắp có FOMC/CPI/NFP", "[dim]Tránh biến động sốc[/dim]")
+    k.add_row("Sắp có FOMC/CPI/NFP (G5)", "Bot tự skip phiên 1h trước tin lớn — tránh dính SL do volatile spike")
     console.print(k)
 
     # === 4 giai đoạn rollout ===

@@ -83,18 +83,19 @@ Danh sách tính năng đã thiết kế trong spec nhưng **chưa code**. Đán
 **Effort:** ~30 LOC, 1 commit
 **Phụ thuộc:** không
 
-### G5. News Blackout
+### G5. News Blackout — ✅ DONE 2026-05-19 (branch feat/g5-news-blackout)
 
-**Vấn đề:** Tin FOMC/CPI/NFP làm vàng nhảy 50 điểm trong 1 phút → SL bot 20 pip dễ dính.
-
-**Spec:**
-- Trong `news/tavily.py`: thêm `detect_high_impact_news()` 
-- Regex tìm keyword: `FOMC|CPI|NFP|Fed (Powell|Chair)|rate decision` + timestamp trong query result
-- Nếu match → return `True, keyword, expected_time`
-- Trong main: nếu blackout active → SKIP + log lý do
-
-**Effort:** ~60 LOC, 1 commit
-**Phụ thuộc:** không
+**Đã làm:**
+- `news/tavily.py.detect_blackout()` (~60 LOC): query Tavily với từ khóa imminent + high-impact, check intersection 2 set
+- HIGH_IMPACT_KEYWORDS: FOMC, CPI, NFP, PCE, Powell, Fed rate decision, non-farm payroll, core inflation
+- IMMINENCE_PATTERNS (strict, không bao gồm "today" trần): "in 1 hour", "in 30 minutes", "imminent", "release at", "minutes away"...
+- Phải có CẢ keyword + imminence indicator mới block
+- Cache 30 phút trong _blackout_cache
+- Fail-safe: lỗi Tavily → return False (không block do lỗi mạng)
+- `_news_blackout_gate()` trong main.py sau kill_gate
+- Config NEWS_BLACKOUT_ENABLED=true (mặc định)
+- 6 unit test cover: imminent FOMC, imminent CPI, generic "today" mention (false), no event, event-no-time, tavily error
+- Live verified: Tavily real call detect "FOMC imminent" → block đúng
 
 ---
 

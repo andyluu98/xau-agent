@@ -53,6 +53,9 @@ class Settings(BaseSettings):
     risk_pct_per_trade: float = 0.0   # 0 = dùng default_lot. >0 = tính lot từ % balance
     kill_dd_pct: float = 3.0          # daily DD ≥ x% → tự tắt bot đến hôm sau
 
+    # News blackout (G5)
+    news_blackout_enabled: bool = True   # bật/tắt G5 toàn cục
+
     # Runtime
     dry_run: bool = True
     log_level: str = "INFO"

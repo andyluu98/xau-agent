@@ -80,3 +80,67 @@ def brief(query: Optional[str] = None, force_refresh: bool = False) -> str:
     _cache.text = text
     _cache.fetched_at = now
     return text
+
+
+# === G5 — News blackout detector ====================================
+# Mục tiêu: nếu sắp có tin lớn (FOMC/CPI/NFP/Fed speech) trong ~1 giờ tới,
+# bot tự skip phiên để tránh dính SL do volatile spike.
+
+HIGH_IMPACT_KEYWORDS = (
+    "FOMC", "CPI", "NFP", "PCE", "Fed rate decision",
+    "rate decision", "Fed Chair", "Powell", "non-farm",
+    "non farm payroll", "core inflation",
+)
+# Từ chỉ "sắp xảy ra" — STRICT, không nhận "today" trần (quá rộng → false positive)
+IMMINENCE_PATTERNS = (
+    "in 1 hour", "in 2 hours", "in 30 minutes", "in 60 minutes",
+    "in 90 minutes", "in an hour", "imminent", "minutes away",
+    "next hour", "this hour", "due in",
+    "release at", "scheduled for today",
+    "hours away", "later today at",
+)
+BLACKOUT_QUERY = (
+    "FOMC OR CPI OR NFP OR Fed rate decision today imminent "
+    "next hours release schedule"
+)
+BLACKOUT_CACHE_TTL_S = 1800  # 30 phút
+
+_blackout_cache = _Cache()
+
+
+def detect_blackout(force_refresh: bool = False) -> tuple[bool, str]:
+    """Kiểm có tin lớn sắp xảy ra trong ~1h tới không.
+
+    Logic: query Tavily với từ khóa imminent + high-impact, check intersection.
+    Returns (is_blackout, reason). Cache 30 phút.
+
+    Fail-safe: lỗi Tavily → return (False, ...) — KHÔNG block bot vì lỗi mạng.
+    """
+    now = time.time()
+    if not force_refresh and _blackout_cache.text and (now - _blackout_cache.fetched_at) < BLACKOUT_CACHE_TTL_S:
+        cached = _blackout_cache.text
+        is_blk = cached.startswith("BLACKOUT|")
+        return is_blk, cached.split("|", 1)[1] if "|" in cached else cached
+
+    try:
+        data = _search(BLACKOUT_QUERY, max_results=5)
+    except TavilyError as e:
+        log.warning("blackout check Tavily failed: %s", e)
+        return False, f"tavily error, fail-safe no blackout: {e}"
+
+    answer = (data.get("answer") or "").lower()
+    titles = " | ".join((r.get("title") or "").lower() for r in data.get("results", []))
+    haystack = f"{answer} {titles}"
+
+    matched_event = next((kw for kw in HIGH_IMPACT_KEYWORDS if kw.lower() in haystack), None)
+    matched_time = next((w for w in IMMINENCE_PATTERNS if w in haystack), None)
+
+    if matched_event and matched_time:
+        reason = f"sắp có tin '{matched_event}' (signal '{matched_time}')"
+        _blackout_cache.text = f"BLACKOUT|{reason}"
+        _blackout_cache.fetched_at = now
+        return True, reason
+
+    _blackout_cache.text = "CLEAR|không có tin lớn sắp diễn ra"
+    _blackout_cache.fetched_at = now
+    return False, "không có tin lớn sắp diễn ra"

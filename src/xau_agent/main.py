@@ -69,6 +69,21 @@ def _kill_gate(symbol: str) -> bool:
     return False
 
 
+def _news_blackout_gate() -> bool:
+    """G5: check sắp có tin lớn không. Returns True nếu bị block."""
+    s = get_settings()
+    if not s.news_blackout_enabled:
+        return False
+    is_blackout, reason = tavily.detect_blackout()
+    if is_blackout:
+        display.render_skip(
+            "NEWS BLACKOUT — sắp có tin lớn",
+            f"{reason}\nTắt G5 tạm: NEWS_BLACKOUT_ENABLED=false trong .env",
+        )
+        return True
+    return False
+
+
 def _build_record(
     su, verdict, result, plan, tv_map, news,
     user_decision: str, ticket: int, lot: float, dry_run: bool,
@@ -123,6 +138,10 @@ def _scan_once(dry_run_override: bool | None = None) -> None:
 
     # Kill switch (G2) — first gate, before anything else
     if _kill_gate(s.symbol):
+        return
+
+    # News blackout (G5) — skip nếu sắp có FOMC/CPI/NFP
+    if _news_blackout_gate():
         return
 
     # Daily trade cap
@@ -233,6 +252,9 @@ def _hunt_once(side_override: str | None, dry_run_override: bool | None = None) 
     display.banner(s.symbol, s.entry_tf, s.trend_tf_list, dry_run)
 
     if _kill_gate(s.symbol):
+        return
+
+    if _news_blackout_gate():
         return
 
     all_tfs = [s.entry_tf] + s.trend_tf_list
